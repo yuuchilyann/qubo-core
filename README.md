@@ -79,13 +79,22 @@ npm run verify:all
 以 git dependency 釘 tag：
 
 ```json
-{ "dependencies": { "qubo-core": "github:yuuchilyann/qubo-core#v0.1.0" } }
+{ "dependencies": { "qubo-core": "github:yuuchilyann/qubo-core#v0.3.0" } }
 ```
+
+| tag | 內容 |
+|---|---|
+| `v0.1.0` | 初版 |
+| `v0.2.0` | `deriveModel(model, P)` —— 可從任意約束模型推導，不限目錄內的案例 |
+| `v0.3.0` | 產碼器泛化：`EmitContext` + `emitTier1For` / `emitTier2For`；`toPythonModel` 改吃模型 |
 
 沒有 build 步驟：原始碼以 TypeScript 出貨，因為消費端都是 bundler 環境，
 而且這樣驗證腳本檢查的就是前端實際載入的那些模組，不是它們的編譯副本。
 
 核心穩定時打 tag，下游主動升版並跑自己的回歸。兩邊節奏獨立，但只有一份 `derive()`。
+
+> 重新釘 tag 之後 `npm install` 不會換版 —— lockfile 鎖著舊 commit SHA，
+> 必須用 `npm install github:yuuchilyann/qubo-core#vX.Y.Z` 明確指定。
 
 ### 給消費者的型別約束
 
