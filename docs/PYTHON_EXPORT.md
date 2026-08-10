@@ -89,11 +89,21 @@ npm run verify:emit
 
 把產出的 Python **原封不動執行**，確認每個案例的兩層產碼都印出預期的答案。
 
-不需要安裝 `dimod`：腳本注入一個純 stdlib 的樁模組（brute-force `ExactSolver` 與
-`BinaryQuadraticModel.from_qubo`），所以不會動到使用者的 Python 環境。
+不需要安裝任何套件：腳本注入純 stdlib 的樁模組，冒充 `dimod`、`dwave.samplers` 與
+`dwave.system`，所以不會動到使用者的 Python 環境。
+
+**每一個不需要 token 的 sampler 都會被實際執行**，而不是只跑 `ExactSolver`。理由是
+它們各自產生**不同的程式**：不同的 import、不同的建構式，而 `mock` 那一支還是一個
+包住另一個 sampler 的 composite。產碼器的錯誤正好會藏在這些差異裡。
+十一案例 × 六種 tier／sampler 組合，共 66 支程式。
 
 這一道檢查的是**只存在於產碼器裡**的邏輯：上三角轉換、最大化符號翻轉、加性常數還原、
 變數索引對應。前兩道驗證都抓不到這些。
+
+> **綠燈代表什麼、不代表什麼。**樁裡每一個 sampler 都是同一個窮舉求解器換個名字，
+> 這是刻意的。它證明的是**程式**：import 解得開、建構式形狀正確、`sample()` 收得下
+> 那些關鍵字、符號與常數與索引都對。它**不**證明模擬退火會找到論文的答案：
+> 那是關於 sampler 的宣稱，只有跑真的才算數。
 
 ## Sampler 目錄
 
@@ -104,11 +114,17 @@ npm run verify:emit
 | `dimod.ExactSolver` | `dimod` | ✗ | ≤ 約 20 變數，保證最優 |
 | `TabuSampler` | `dwave-samplers` | ✗ | 數千變數 |
 | `SimulatedAnnealingSampler` | `dwave-samplers` | ✗ | 數千變數 |
+| `MockDWaveSampler` + `EmbeddingComposite` | `dwave-system` | ✗ | 受 minor-embedding 限制 |
 | `DWaveSampler` + `EmbeddingComposite` | `dwave-ocean-sdk` | ✓ | 受 minor-embedding 限制 |
 | `LeapHybridSampler` | `dwave-ocean-sdk` | ✓ | 數萬變數 |
 
-參考案例集最大 15 變數，都在 `ExactSolver` 射程內，所以無需 token 的三個選項
+參考案例集最大 15 變數，都在 `ExactSolver` 射程內，所以無需 token 的四個選項
 產出的程式碼是**真的能跑並得到論文答案**的，不是示意用的。
+
+**`mock` 是其中最有意思的一個。**`MockDWaveSampler` 提供的是真實的求解器拓樸，
+所以 `EmbeddingComposite` 會做**真正的 minor-embedding**，chains 是真的 chains，
+被模擬的只有退火本身。它支持的宣稱是「embedding 這條路已完整實作並實際執行」，
+而不是「在量子退火機上求解」。換成 `qpu` 那一列是換一組憑證，不是改程式。
 
 ## 安裝指令
 

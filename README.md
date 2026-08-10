@@ -9,13 +9,13 @@ QUBO 推導引擎、古典求解器與 Python 產碼器。
 
 ## 這個庫收什麼
 
-只收演算法與建模配方 —— 推導、求解、產碼，以及驗證這些東西正確所需的參考資料。
+只收演算法與建模配方：推導、求解、產碼，以及驗證這些東西正確所需的參考資料。
 
 **不收任何消費端的產品實作**：外部服務整合、使用者介面、i18n 字典、營運與計費邏輯，
 都屬於使用這個庫的專案，不屬於這裡。判準是這條：
 
-> 收 —— 如果它是通用的建模或求解方法。
-> 不收 —— 如果它只對某一個前端有意義。
+> 收：如果它是通用的建模或求解方法。
+> 不收：如果它只對某一個前端有意義。
 
 新增文獻中的最佳化方法沒有問題。**若要加入的是尚未公開的自有方法，先判斷是否適合公開，
 不要預設進來。**
@@ -48,7 +48,7 @@ src/
 > **Q 矩陣一律用程式從原始約束模型推導，絕不硬寫。**
 
 參考來源印出的 Q 另存一份（`paperQ`），只用來做 diff。比對通過時證明的是**通用配方本身正確**，
-而不是「那些矩陣抄對了」—— 因為每個案例走的都是同一支 `derive()`。
+而不是「那些矩陣抄對了」，因為每個案例走的都是同一支 `derive()`。
 
 ## 三道驗證
 
@@ -79,21 +79,22 @@ npm run verify:all
 以 git dependency 釘 tag：
 
 ```json
-{ "dependencies": { "qubo-core": "github:yuuchilyann/qubo-core#v0.3.0" } }
+{ "dependencies": { "qubo-core": "github:yuuchilyann/qubo-core#v0.4.0" } }
 ```
 
 | tag | 內容 |
 |---|---|
 | `v0.1.0` | 初版 |
-| `v0.2.0` | `deriveModel(model, P)` —— 可從任意約束模型推導，不限目錄內的案例 |
+| `v0.2.0` | `deriveModel(model, P)`，可從任意約束模型推導，不限目錄內的案例 |
 | `v0.3.0` | 產碼器泛化：`EmitContext` + `emitTier1For` / `emitTier2For`；`toPythonModel` 改吃模型 |
+| `v0.4.0` | `MockDWaveSampler`（真實 minor-embedding，不需 token）；`verify:emit` 從 22 支程式擴充到 66 支。`SamplerLimitKey` 新增 `sampler.limit.mock`，升版的消費端要補這個字典項目 |
 
 沒有 build 步驟：原始碼以 TypeScript 出貨，因為消費端都是 bundler 環境，
 而且這樣驗證腳本檢查的就是前端實際載入的那些模組，不是它們的編譯副本。
 
 核心穩定時打 tag，下游主動升版並跑自己的回歸。兩邊節奏獨立，但只有一份 `derive()`。
 
-> 重新釘 tag 之後 `npm install` 不會換版 —— lockfile 鎖著舊 commit SHA，
+> 重新釘 tag 之後 `npm install` 不會換版：lockfile 鎖著舊 commit SHA，
 > 必須用 `npm install github:yuuchilyann/qubo-core#vX.Y.Z` 明確指定。
 
 ### 給消費者的型別約束
