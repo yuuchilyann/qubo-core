@@ -151,8 +151,19 @@ function clauseLatex(clause: Clause, names: string[]): string {
  * what the penalty slider does.
  */
 export function derive(qcase: QuboCase, penalty?: number): Derivation {
-  const model = qcase.model;
-  const P = penalty ?? qcase.penalty?.paperValue ?? 1;
+  return deriveModel(qcase.model, penalty ?? qcase.penalty?.paperValue ?? 1);
+}
+
+/**
+ * The same recipe applied to any constrained model, not just a catalogued one.
+ *
+ * `derive()` is the convenience wrapper for a case that carries its own
+ * reference penalty; this is the general entry point, for a model that came
+ * from somewhere else. Both run identical code, so a model built at runtime is
+ * recast by exactly the routine the reconciliation harness checks — which is
+ * the only reason a derivation from unverified input can be trusted at all.
+ */
+export function deriveModel(model: ConstrainedModel, P = 1): Derivation {
   // Minimising ADDS penalties; maximising SUBTRACTS them (§5.3, §5.5).
   const sign = model.sense === 'min' ? 1 : -1;
 
