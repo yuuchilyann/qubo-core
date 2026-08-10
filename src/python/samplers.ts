@@ -6,9 +6,15 @@
  * locally with no account, no API key and no QPU charge — so the exported code
  * is something a reader can actually paste into Colab and run, not an
  * aspirational snippet. Only the last two entries reach D-Wave hardware.
+ *
+ * The entries in between are the interesting ones for a reader who has no Leap
+ * account. `sa` and `tabu` are D-Wave's own production solvers running
+ * classically; `mock` additionally performs a real minor-embedding onto a real
+ * topology. Each supports a claim that is true as written, and none of them
+ * supports "solved on a quantum annealer".
  */
 
-export type SamplerId = 'exact' | 'tabu' | 'sa' | 'qpu' | 'hybrid';
+export type SamplerId = 'exact' | 'tabu' | 'sa' | 'mock' | 'qpu' | 'hybrid';
 
 /**
  * Dictionary keys for each sampler's practical ceiling.
@@ -23,6 +29,7 @@ export type SamplerLimitKey =
   | 'sampler.limit.exact'
   | 'sampler.limit.tabu'
   | 'sampler.limit.sa'
+  | 'sampler.limit.mock'
   | 'sampler.limit.qpu'
   | 'sampler.limit.hybrid';
 
@@ -73,6 +80,32 @@ export const SAMPLERS: SamplerSpec[] = [
     construct: 'SimulatedAnnealingSampler()',
     sampleArgs: 'num_reads=100',
     limitKey: 'sampler.limit.sa',
+  },
+  {
+    /**
+     * The whole path to hardware, minus the hardware.
+     *
+     * `MockDWaveSampler` presents a real solver topology, so
+     * `EmbeddingComposite` performs an actual minor-embedding onto it and the
+     * chains are real chains. What is simulated is only the annealing itself.
+     *
+     * That makes this the honest choice for anyone without a Leap account: the
+     * claim it supports is "the embedding path is implemented and executed",
+     * which is true, rather than "solved on a quantum annealer", which is not.
+     * Swapping it for `qpu` below is a change of credentials, not of code.
+     */
+    id: 'mock',
+    label: 'MockDWaveSampler + EmbeddingComposite',
+    needsToken: false,
+    packages: ['dimod', 'dwave-system'],
+    imports: [
+      'import dimod',
+      'from dwave.system import EmbeddingComposite',
+      'from dwave.system.testing import MockDWaveSampler',
+    ],
+    construct: 'EmbeddingComposite(MockDWaveSampler())',
+    sampleArgs: 'num_reads=100',
+    limitKey: 'sampler.limit.mock',
   },
   {
     id: 'qpu',

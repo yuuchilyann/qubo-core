@@ -1,7 +1,7 @@
 {
   "name": "qubo-core",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "description": "QUBO derivation engine, classical solvers and Python emitters. Turns a constrained 0/1 model into the standard form xᵀQx.",
   "exports": {
