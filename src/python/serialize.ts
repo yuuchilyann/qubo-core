@@ -8,7 +8,7 @@
  * today.
  */
 
-import type { QuboCase } from '../types';
+import type { ConstrainedModel } from '../types';
 
 export type PyModel = {
   sense: 'min' | 'max';
@@ -26,8 +26,12 @@ export type PyModel = {
   cut_edges?: [number, number][];
 };
 
-export function toPythonModel(qcase: QuboCase): PyModel {
-  const m = qcase.model;
+/**
+ * Takes the model rather than the case: a model assembled at runtime has to
+ * serialise through this same function, or `verify:python` would be proving a
+ * property of the catalogue instead of a property of the emitter.
+ */
+export function toPythonModel(m: ConstrainedModel): PyModel {
   const out: PyModel = {
     sense: m.sense,
     num_vars: m.numVars,

@@ -13,7 +13,7 @@
  *   obligation — guarded by `npm run verify:python`.
  */
 
-import type { QuboCase, QuboModel } from '../types';
+import type { ConstrainedModel, QuboCase, QuboModel } from '../types';
 import { toUpperTriangular } from '../qubo';
 import { FUNCTION_MODULE } from './module';
 import { findSampler, type SamplerId } from './samplers';
@@ -25,15 +25,62 @@ function num(v: number): string {
   return Number.isInteger(v) ? String(v) : String(Number(v.toFixed(10)));
 }
 
-function header(qcase: QuboCase, P: number, extra = ''): string {
+/**
+ * Everything the emitters need that is not the model itself.
+ *
+ * Introduced so a model assembled at runtime can be emitted without inventing
+ * a catalogue entry around it — which would mean fabricating a section number,
+ * a page range and a published solution it does not have. The caller supplies
+ * its own labels; this module has no opinion about who is asking or whose
+ * claim an expected answer is.
+ */
+export type EmitContext = {
+  /** First line of the docstring. */
+  title: string;
+  /** Attribution, when the model comes from a published source. */
+  credit?: string | null;
+  /** `null` when the model has no constraints and P is meaningless. */
+  penalty?: number | null;
+  /** What the program should print, and whose claim that is. */
+  expectation?: Expectation;
+};
+
+export type Expectation =
+  | { kind: 'answer'; label: string; x: number[]; yQubo: number; yOriginal: number }
+  | { kind: 'none'; note: string };
+
+/** The context a catalogued case implies. Keeps the published output identical. */
+function contextFor(qcase: QuboCase, P: number): EmitContext {
   const [a, b] = qcase.pages;
   const pages = a === b ? `p.${a}` : `pp.${a}–${b}`;
-  return `"""QUBO Model Explorer — ${qcase.section} ${qcase.id} (${pages})
+  return {
+    title: `QUBO Model Explorer — ${qcase.section} ${qcase.id} (${pages})`,
+    credit: 'Glover, Kochenberger & Du, "A Tutorial on Formulating and Using QUBO Models".',
+    penalty: qcase.penalty ? P : null,
+    expectation: qcase.custom
+      ? {
+          kind: 'none',
+          note: `Custom input: this model no longer matches ${qcase.section} of the paper,\nso there is no published answer to compare against.`,
+        }
+      : {
+          kind: 'answer',
+          label: `per the paper (${qcase.section})`,
+          x: qcase.paperSolution.x,
+          yQubo: qcase.paperSolution.yQubo,
+          yOriginal: qcase.paperSolution.yOriginal,
+        },
+  };
+}
 
-Glover, Kochenberger & Du, "A Tutorial on Formulating and Using QUBO Models".
-${qcase.penalty ? `Penalty scalar P = ${num(P)}.` : 'This model needs no penalty scalar.'}${
-    extra ? `\n${extra}` : ''
-  }
+function header(ctx: EmitContext, extra = ''): string {
+  const penaltyLine =
+    ctx.penalty === null || ctx.penalty === undefined
+      ? 'This model needs no penalty scalar.'
+      : `Penalty scalar P = ${num(ctx.penalty)}.`;
+  const body = [ctx.credit, penaltyLine].filter(Boolean).join('\n');
+  return `"""${ctx.title}
+
+${body}${extra ? `\n${extra}` : ''}
 """`;
 }
 
@@ -88,27 +135,34 @@ print("original y =", y_original)`;
  * different problem, so quoting it would be actively misleading — the emitted
  * script says so instead of printing numbers that will not appear.
  */
-function expectation(qcase: QuboCase): string {
-  if (qcase.custom) {
-    return `# Custom input: this model no longer matches ${qcase.section} of the paper,
-# so there is no published answer to compare against.`;
+function expectation(e: Expectation | undefined): string {
+  if (!e) return '# No expected answer was supplied.';
+  if (e.kind === 'none') {
+    return e.note
+      .split('\n')
+      .map((l) => `# ${l}`)
+      .join('\n');
   }
-  const { x, yQubo, yOriginal } = qcase.paperSolution;
-  return `# Expected, per the paper (${qcase.section}):
-#   x          = [${x.join(', ')}]
-#   x^T Q x    = ${yQubo}
-#   original y = ${yOriginal}`;
+  return `# Expected, ${e.label}:
+#   x          = [${e.x.join(', ')}]
+#   x^T Q x    = ${e.yQubo}
+#   original y = ${e.yOriginal}`;
+}
+
+/** Tier 1 for a catalogued case. */
+export function emitTier1(qcase: QuboCase, model: QuboModel, samplerId: SamplerId): string {
+  return emitTier1For(contextFor(qcase, model.P), model, samplerId);
 }
 
 /** Tier 1 — Q as a literal. */
-export function emitTier1(
-  qcase: QuboCase,
+export function emitTier1For(
+  ctx: EmitContext,
   model: QuboModel,
   samplerId: SamplerId,
 ): string {
   const s = findSampler(samplerId);
   return [
-    header(qcase, model.P),
+    header(ctx),
     s.imports.join('\n'),
     '',
     `N = ${model.n}`,
@@ -120,7 +174,7 @@ export function emitTier1(
     '',
     SOLVE_AND_REPORT(samplerId),
     '',
-    expectation(qcase),
+    expectation(ctx.expectation),
     '',
   ].join('\n');
 }
@@ -131,21 +185,29 @@ export function emitTier1(
  * Rendered from the same `toPythonModel()` object the cross-verification script
  * feeds to Python, so the bytes the user copies are the bytes that were checked.
  */
-export function emitModelLiteral(qcase: QuboCase): string {
-  return `MODEL = ${pyRepr(toPythonModel(qcase))}`;
+export function emitModelLiteral(model: ConstrainedModel): string {
+  return `MODEL = ${pyRepr(toPythonModel(model))}`;
+}
+
+/** Tier 2 for a catalogued case. */
+export function emitTier2(qcase: QuboCase, model: QuboModel, samplerId: SamplerId): string {
+  return emitTier2For(contextFor(qcase, model.P), qcase.model, model, samplerId, {
+    modelComment: '# ── the original constrained model, exactly as the paper states it ──',
+  });
 }
 
 /** Tier 2 — derive Q inside Python from the original constrained model. */
-export function emitTier2(
-  qcase: QuboCase,
+export function emitTier2For(
+  ctx: EmitContext,
+  constrained: ConstrainedModel,
   model: QuboModel,
   samplerId: SamplerId,
+  options: { modelComment?: string } = {},
 ): string {
   const s = findSampler(samplerId);
   return [
     header(
-      qcase,
-      model.P,
+      ctx,
       'Q is DERIVED here rather than pasted in, so the same code handles any\nmodel of this shape — which is what the tutorial is really teaching.',
     ),
     s.imports.join('\n'),
@@ -154,8 +216,8 @@ export function emitTier2(
     FUNCTION_MODULE.trimEnd(),
     '',
     '',
-    '# ── the original constrained model, exactly as the paper states it ──',
-    emitModelLiteral(qcase),
+    options.modelComment ?? '# ── the original constrained model, before any QUBO recasting ──',
+    emitModelLiteral(constrained),
     '',
     `Q_sym, OFFSET, N = build_qubo(MODEL, P=${num(model.P)})`,
     `SENSE = MODEL["sense"]`,
@@ -163,7 +225,7 @@ export function emitTier2(
     '',
     SOLVE_AND_REPORT(samplerId),
     '',
-    expectation(qcase),
+    expectation(ctx.expectation),
     '',
   ].join('\n');
 }
@@ -177,6 +239,7 @@ export function buildNotebook(
   installPackages: string[],
 ): NotebookCell[] {
   const s = findSampler(samplerId);
+  const ctx = contextFor(qcase, model.P);
   const cells: NotebookCell[] = [
     // Colab needs the `!` prefix; the shell block above the script does not.
     { source: `!pip install ${[...new Set(installPackages)].join(' ')}` },
@@ -194,7 +257,7 @@ os.environ["DWAVE_API_TOKEN"] = "paste your token here"`,
   if (tier === 1) {
     cells.push({
       source: [
-        header(qcase, model.P),
+        header(ctx),
         s.imports.join('\n'),
         '',
         `N = ${model.n}`,
@@ -208,7 +271,7 @@ os.environ["DWAVE_API_TOKEN"] = "paste your token here"`,
     cells.push({ source: [s.imports.join('\n'), '', FUNCTION_MODULE.trimEnd()].join('\n') });
     cells.push({
       source: [
-        emitModelLiteral(qcase),
+        emitModelLiteral(qcase.model),
         '',
         `Q_sym, OFFSET, N = build_qubo(MODEL, P=${num(model.P)})`,
         `SENSE = MODEL["sense"]`,
@@ -217,7 +280,7 @@ os.environ["DWAVE_API_TOKEN"] = "paste your token here"`,
     });
   }
 
-  cells.push({ source: [SOLVE_AND_REPORT(samplerId), '', expectation(qcase)].join('\n') });
+  cells.push({ source: [SOLVE_AND_REPORT(samplerId), '', expectation(ctx.expectation)].join('\n') });
   return cells;
 }
 

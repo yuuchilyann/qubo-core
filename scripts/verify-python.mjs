@@ -76,7 +76,7 @@ json.dump(result, sys.stdout)
   const payload = ALL_CASES.map((c) => ({
     id: c.id,
     P: c.penalty?.paperValue ?? 1,
-    model: toPythonModel(c),
+    model: toPythonModel(c.model),
   }));
 
   console.log(`\n${BOLD}Python ↔ TypeScript ↔ paper — three-way agreement${RESET}`);
