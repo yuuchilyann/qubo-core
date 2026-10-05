@@ -210,6 +210,13 @@ slack 上界用整列範圍（16、13），**不能**沿用 §5.5 的判斷 3：
 同一組點：P-Median（恰開 2 個）開最外側的據點 1、3，總距離 5；
 Warehouse Location 加上開設成本 (4, 1, 6)、不限個數，便宜的中間據點改變了答案：開 1、2，總成本 14。
 
+**與原作者做法的交叉印證。** §1 清單的出處 Kochenberger & Glover（2006）§5.1 處理同一類問題
+（Warehouse Location: Single source, Uncapacitated）時，是把 `y` 取補數，再對
+`x_{ij} + ȳ_i ≤ 1` 套 Transformation #2，得到 `P·x_{ij}(1 − y_i)`。展開就是
+`P(x_{ij} − x_{ij}y_i)`，和本庫用的 p.10 第 4 列逐項相同，也同樣「不需要新變數」。
+該文的實例是隨機產生的（`c_ij = U(50, 100)`、`f_i = U(100, 200)`、P = 200），
+所以能比對的是配方，不是數字。
+
 ### Linear Ordering — slack 上界 1 是判斷，而且被驗證
 
 每對 `i < j` 一個變數，每個三元組 `i < j < k` 兩條列 `0 ≤ x_{ij} + x_{jk} − x_{ik} ≤ 1`。
@@ -240,7 +247,26 @@ Q 是 5×5。P 是降階懲罰：`x₅` 的 load 是 2，所以 `P > 2`，取 3�
 `1 − a − b − c + ab + ac + bc`。因為先加總再降階，這題**一個輔助變數都沒有**，
 和 Max 3-SAT 恰成對比。8 種分隊方式全部滿足（交換隊名算 2 種，所以本質上 4 種）。
 
-## 值得注意的幾點
+**這不是原作者用的 CSP 寫法。** Kochenberger & Glover（2006）§5.2 的 CSP 是線性等式組
+`Ax = b`，`a_ij ∈ {−1, 0, 1}`、`b_i ∈ {1, 2}`，以 Transformation #1、P = 2 轉換，
+不需要新變數。Not-All-Equal 同樣是 CSP，但是另一種；本庫選它，是因為「三次項互相抵消」
+這件事是 Max 3-SAT 單獨教不了的。該文的實例是隨機產生的，兩種寫法都沒有可重現的公開實例。
+
+### 論文清單中沒有實作的三項
+
+§1 清單裡的 Asymmetric Assignment、Symmetric Assignment、Side Constrained Assignment
+**刻意不做**。追溯過的來源：
+
+| 來源 | 結果 |
+|---|---|
+| Kochenberger & Glover（2006）§4（§1 清單的出處） | 只列名稱，與 2019 論文幾乎逐字相同，沒有定義 |
+| 同文引用的 Boros & Hammer（1991）、Lewis 等（2004） | 主題分別是 Max-Cut、任務分配，無關 |
+| Kochenberger 等（2014）綜述 | 只提到「various forms of assignment problems」 |
+| Kochenberger 等（2004，OR Spectrum） | 非公開，未能確認 |
+
+這三個名稱在文獻中沒有唯一定義。自行選一個定義再標成「論文提及的問題」，
+會把本庫的判斷冒充成論文的內容，所以在找到原作者的定義之前不收。
+
 
 ### §3.1 Number Partitioning — 「自然形式」其實是通用配方的特例
 

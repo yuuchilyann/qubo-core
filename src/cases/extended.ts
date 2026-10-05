@@ -445,6 +445,14 @@ export const pMedian: ExtendedCase = {
  *
  * P is ours, by the same argument: opening every site is feasible at 16, so
  * `P > 16`; 17.
+ *
+ * Cross-check against the source of the §1 list. Kochenberger & Glover (2006,
+ * §5.1, "Warehouse Location: Single source, Uncapacitated") recast
+ * `x_{ij} ≤ y_i` by complementing `y` and applying Transformation #2 to
+ * `x_{ij} + ȳ_i ≤ 1`, giving `P·x_{ij}(1 − y_i)`. That is `P(x_{ij} − x_{ij}y_i)`,
+ * the p.10 row-4 penalty used here, term for term — and, as they note, "no new
+ * variables required". Their instances are random (`c_ij = U(50, 100)`,
+ * `f_i = U(100, 200)`, P = 200), so only the recipe can be compared, not numbers.
  */
 export const warehouseLocation: ExtendedCase = {
   source: 'mentioned',
@@ -683,6 +691,14 @@ export const NAE_TRIPLES: [number, number, number][] = [
  * Eight team assignments satisfy every trio (four, up to swapping the team
  * names), so the optimum 0 appears with degeneracy 8. No penalty is needed:
  * there are no constraints and nothing to reduce.
+ *
+ * NOT the formulation the authors themselves used. Kochenberger & Glover (2006,
+ * §5.2), the source of the §1 list, treat CSPs as linear equality systems
+ * `Ax = b` with `a_ij ∈ {−1, 0, 1}` and `b_i ∈ {1, 2}`, recast with
+ * Transformation #1 at P = 2 and no new variables. Not-all-equal is a CSP too,
+ * but it is a different one, chosen here because the cancellation is a lesson
+ * `max3Sat` alone cannot teach. Their instances are random, so there is no
+ * published one to reproduce in either form.
  */
 export const constraintSatisfaction: ExtendedCase = {
   source: 'mentioned',
