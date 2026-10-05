@@ -8,8 +8,9 @@
  * Changing the derivation on the TypeScript side REQUIRES updating this string.
  *
  * `npm run verify:python` guards the invariant: it executes this module under
- * the system Python against all eleven cases and asserts the Q it produces
- * equals both the TypeScript-derived Q and the Q printed in the paper. A drift
+ * the system Python against every catalogued case and asserts the Q it
+ * produces equals the TypeScript-derived Q, and also the Q printed in the paper
+ * wherever the paper prints one. A drift
  * fails the build rather than silently shipping two different tutorials.
  */
 

@@ -15,6 +15,7 @@ import { decisionVars, gridVars, row, unitRow } from './helpers';
  * containing both — a useful cross-check on the general derivation.
  */
 export const setPartitioning: QuboCase = {
+  source: 'worked',
   id: 'set-partitioning',
   section: '§5.1',
   pages: [19, 20],
@@ -111,6 +112,7 @@ function coloringConstraints(): Constraint[] {
  * purely to find a feasible colouring.
  */
 export const graphColoring: QuboCase = {
+  source: 'worked',
   id: 'graph-coloring',
   section: '§5.2',
   pages: [21, 24],
@@ -162,6 +164,7 @@ export const graphColoring: QuboCase = {
  * explicitly rather than derived.
  */
 export const general01: QuboCase = {
+  source: 'worked',
   id: 'general-01',
   section: '§5.3',
   pages: [25, 26],
@@ -259,6 +262,7 @@ function qapQuadratic(): { i: number; j: number; coef: number }[] {
 }
 
 export const qap: QuboCase = {
+  source: 'worked',
   id: 'qap',
   section: '§5.4',
   pages: [27, 29],
@@ -307,6 +311,7 @@ export const qap: QuboCase = {
  * theoretical 16).
  */
 export const quadraticKnapsack: QuboCase = {
+  source: 'worked',
   id: 'quadratic-knapsack',
   section: '§5.5',
   pages: [29, 30],

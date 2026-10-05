@@ -1,7 +1,7 @@
 {
   "name": "qubo-core",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "description": "QUBO derivation engine, classical solvers and Python emitters. Turns a constrained 0/1 model into the standard form xᵀQx.",
   "exports": {
@@ -9,6 +9,7 @@
     "./types": "./src/types.ts",
     "./qubo": "./src/qubo.ts",
     "./derive": "./src/derive.ts",
+    "./constrained": "./src/constrained.ts",
     "./cases": "./src/cases/index.ts",
     "./cases/mutate": "./src/cases/mutate.ts",
     "./samplers/bruteForce": "./src/samplers/bruteForce.ts",

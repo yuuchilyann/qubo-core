@@ -1,5 +1,6 @@
 /**
- * Runs the reconciliation harness against all eleven paper cases.
+ * Runs the reconciliation harness against the eleven worked paper cases, and
+ * the constrained-search checks against the cases the paper only names.
  *
  *     npm run verify
  *
@@ -39,7 +40,8 @@ try {
 
   for (const report of verifyAll()) {
     const head = report.ok ? `${GREEN}PASS${RESET}` : `${RED}FAIL${RESET}`;
-    console.log(`${head}  ${report.section.padEnd(6)} ${report.id}  ${DIM}n=${report.n}${RESET}`);
+    const tag = report.source === 'worked' ? '' : `  ${DIM}(named in the paper, not worked — no paper Q)${RESET}`;
+    console.log(`${head}  ${report.section.padEnd(6)} ${report.id}  ${DIM}n=${report.n}${RESET}${tag}`);
     for (const check of report.checks) {
       const mark = check.ok ? `${GREEN}✓${RESET}` : `${RED}✗${RESET}`;
       console.log(`        ${mark} ${check.name}`);

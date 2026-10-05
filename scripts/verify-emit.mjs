@@ -1,6 +1,10 @@
 /**
  * Executes the emitted Python and checks it prints the paper's answer.
  *
+ * For a case the paper only names, "the answer" is the optimum of the original
+ * constrained model found by `solveConstrained` — the same reference the
+ * emitted program quotes in its expectation comment.
+ *
  *     npm run verify:emit
  *
  * The reconciliation harness proves the Q matrix is right; this proves the
@@ -186,11 +190,12 @@ const server = await createServer({
 let failed = 0;
 
 try {
-  const { ALL_CASES } = await server.ssrLoadModule('/src/cases/index.ts');
+  const { CATALOG } = await server.ssrLoadModule('/src/cases/index.ts');
+  const { solveConstrained } = await server.ssrLoadModule('/src/constrained.ts');
   const { derive } = await server.ssrLoadModule('/src/derive.ts');
   const { emitTier1, emitTier2 } = await server.ssrLoadModule('/src/python/emit.ts');
 
-  console.log(`\n${BOLD}Emitted Python — does it actually reproduce the paper?${RESET}`);
+  console.log(`\n${BOLD}Emitted Python — does it actually reproduce the reference answer?${RESET}`);
   console.log(`${DIM}stub dimod, no packages installed; both tiers executed verbatim${RESET}\n`);
 
   // Fail fast if Python is unavailable rather than reporting a false pass.
@@ -202,9 +207,16 @@ try {
     process.exit(0);
   }
 
-  for (const qcase of ALL_CASES) {
+  for (const qcase of CATALOG) {
     const { model } = derive(qcase);
-    const expect = qcase.paperSolution;
+    let expect;
+    if (qcase.source === 'worked') {
+      expect = qcase.paperSolution;
+    } else {
+      const best = solveConstrained(qcase.model).best;
+      expect = { yQubo: best - model.constant, yOriginal: best };
+    }
+    const ref = qcase.source === 'worked' ? 'paper' : 'searched';
 
     for (const [tier, sampler] of TIER_SAMPLERS) {
       const body = tier === 1 ? emitTier1(qcase, model, sampler) : emitTier2(qcase, model, sampler);
@@ -223,9 +235,9 @@ try {
       }
 
       const problems = [];
-      if (got.y_qubo !== expect.yQubo) problems.push(`xᵀQx=${got.y_qubo} paper=${expect.yQubo}`);
+      if (got.y_qubo !== expect.yQubo) problems.push(`xᵀQx=${got.y_qubo} ${ref}=${expect.yQubo}`);
       if (got.y_original !== expect.yOriginal) {
-        problems.push(`original=${got.y_original} paper=${expect.yOriginal}`);
+        problems.push(`original=${got.y_original} ${ref}=${expect.yOriginal}`);
       }
       // Degenerate optima mean a different x can be equally correct, so the
       // assignment is only required to ATTAIN the paper's value, not equal its x.
@@ -245,7 +257,7 @@ try {
 }
 
 if (failed) {
-  console.log(`\n${RED}${BOLD}${failed} emitted program(s) did not reproduce the paper.${RESET}\n`);
+  console.log(`\n${RED}${BOLD}${failed} emitted program(s) did not reproduce the reference answer.${RESET}\n`);
   process.exit(1);
 }
-console.log(`\n${GREEN}${BOLD}Every emitted program reproduces the paper's answer.${RESET}\n`);
+console.log(`\n${GREEN}${BOLD}Every emitted program reproduces its reference: the paper's answer, or the constrained search where the paper prints none.${RESET}\n`);

@@ -8,9 +8,12 @@
  * hand-maintained port of `src/derive.ts`. That is the one place in this
  * project where the same algorithm exists twice, so it is the one place that can
  * silently drift. This script executes the real module under the system Python,
- * feeds it the same eleven models the app ships, and asserts three-way agreement:
+ * feeds it every model the catalogue ships, and asserts three-way agreement:
  *
  *     Python build_qubo()  ==  TypeScript derive()  ==  the paper's printed Q
+ *
+ * A case the paper only names has no printed Q, so for it the agreement is
+ * two-way (Python == TypeScript) and the output says so.
  *
  * Requires `python` on PATH. No third-party packages: the module is pure stdlib.
  */
@@ -55,7 +58,7 @@ const server = await createServer({
 let failed = 0;
 
 try {
-  const { ALL_CASES } = await server.ssrLoadModule('/src/cases/index.ts');
+  const { CATALOG } = await server.ssrLoadModule('/src/cases/index.ts');
   const { derive } = await server.ssrLoadModule('/src/derive.ts');
   const { FUNCTION_MODULE } = await server.ssrLoadModule('/src/python/module.ts');
   const { toPythonModel } = await server.ssrLoadModule('/src/python/serialize.ts');
@@ -73,13 +76,13 @@ for item in payload:
 json.dump(result, sys.stdout)
 `;
 
-  const payload = ALL_CASES.map((c) => ({
+  const payload = CATALOG.map((c) => ({
     id: c.id,
     P: c.penalty?.paperValue ?? 1,
     model: toPythonModel(c.model),
   }));
 
-  console.log(`\n${BOLD}Python ↔ TypeScript ↔ paper — three-way agreement${RESET}`);
+  console.log(`\n${BOLD}Python ↔ TypeScript ↔ paper — three-way agreement (two-way where the paper prints no Q)${RESET}`);
   console.log(`${DIM}interpreter: ${PY}${RESET}\n`);
 
   let raw;
@@ -94,7 +97,8 @@ json.dump(result, sys.stdout)
 
   const fromPython = new Map(JSON.parse(raw).map((r) => [r.id, r]));
 
-  for (const qcase of ALL_CASES) {
+  for (const qcase of CATALOG) {
+    const worked = qcase.source === 'worked';
     const py = fromPython.get(qcase.id);
     const { model: ts } = derive(qcase);
     const problems = [];
@@ -109,7 +113,7 @@ json.dump(result, sys.stdout)
             if (Math.abs(py.Q[i][j] - ts.Q[i][j]) > 1e-9) {
               problems.push(`Q[${i}][${j}]: python=${py.Q[i][j]} ts=${ts.Q[i][j]}`);
             }
-            if (Math.abs(py.Q[i][j] - qcase.paperQ[i][j]) > 1e-9) {
+            if (worked && Math.abs(py.Q[i][j] - qcase.paperQ[i][j]) > 1e-9) {
               problems.push(`Q[${i}][${j}]: python=${py.Q[i][j]} paper=${qcase.paperQ[i][j]}`);
             }
           }
@@ -118,7 +122,7 @@ json.dump(result, sys.stdout)
       if (Math.abs(py.constant - ts.constant) > 1e-9) {
         problems.push(`constant: python=${py.constant} ts=${ts.constant}`);
       }
-      if (Math.abs(py.constant - qcase.paperConstant) > 1e-9) {
+      if (worked && Math.abs(py.constant - qcase.paperConstant) > 1e-9) {
         problems.push(`constant: python=${py.constant} paper=${qcase.paperConstant}`);
       }
     }
@@ -126,7 +130,7 @@ json.dump(result, sys.stdout)
     const ok = problems.length === 0;
     const mark = ok ? `${GREEN}✓${RESET}` : `${RED}✗${RESET}`;
     console.log(
-      `  ${mark} ${qcase.section.padEnd(6)} ${qcase.id.padEnd(22)} ${DIM}n=${ts.n}${RESET}`,
+      `  ${mark} ${qcase.section.padEnd(6)} ${qcase.id.padEnd(22)} ${DIM}n=${ts.n}${worked ? '' : '  two-way: no paper Q'}${RESET}`,
     );
     for (const p of problems.slice(0, 5)) console.log(`      ${RED}${p}${RESET}`);
     if (problems.length > 5) console.log(`      ${DIM}…(+${problems.length - 5} more)${RESET}`);
@@ -142,4 +146,4 @@ if (failed) {
   );
   process.exit(1);
 }
-console.log(`\n${GREEN}${BOLD}Python module matches TypeScript and the paper on all cases.${RESET}\n`);
+console.log(`\n${GREEN}${BOLD}Python module matches TypeScript on all cases, and the paper on every worked example.${RESET}\n`);

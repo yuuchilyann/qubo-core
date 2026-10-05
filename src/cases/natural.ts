@@ -26,6 +26,7 @@ export const TUTORIAL_GRAPH: Graph = {
  * purely "here is what `xᵀQx` means".
  */
 export const helloWorld: QuboCase = {
+  source: 'worked',
   id: 'hello-world',
   section: '§2',
   pages: [5, 5],
@@ -70,6 +71,7 @@ export const NUMBERS = [25, 7, 13, 31, 42, 17, 21, 10];
 const C_SUM = NUMBERS.reduce((a, b) => a + b, 0); // 166
 
 export const numberPartitioning: QuboCase = {
+  source: 'worked',
   id: 'number-partitioning',
   section: '§3.1',
   pages: [6, 7],
@@ -108,6 +110,7 @@ export const numberPartitioning: QuboCase = {
  * different sets, so summing it over E gives the cut size directly.
  */
 export const maxCut: QuboCase = {
+  source: 'worked',
   id: 'max-cut',
   section: '§3.2',
   pages: [7, 9],

@@ -13,7 +13,8 @@
  *   obligation — guarded by `npm run verify:python`.
  */
 
-import type { ConstrainedModel, QuboCase, QuboModel } from '../types';
+import type { CatalogCase, ConstrainedModel, QuboModel } from '../types';
+import { CONSTRAINED_LIMIT, solveConstrained } from '../constrained';
 import { toUpperTriangular } from '../qubo';
 import { FUNCTION_MODULE } from './module';
 import { findSampler, type SamplerId } from './samplers';
@@ -49,18 +50,46 @@ export type Expectation =
   | { kind: 'answer'; label: string; x: number[]; yQubo: number; yOriginal: number }
   | { kind: 'none'; note: string };
 
-/** The context a catalogued case implies. Keeps the published output identical. */
-function contextFor(qcase: QuboCase, P: number): EmitContext {
-  const [a, b] = qcase.pages;
-  const pages = a === b ? `p.${a}` : `pp.${a}–${b}`;
+const CREDIT = 'Glover, Kochenberger & Du, "A Tutorial on Formulating and Using QUBO Models".';
+
+function pageLabel(pages: [number, number]): string {
+  const [a, b] = pages;
+  return a === b ? `p.${a}` : `pp.${a}–${b}`;
+}
+
+/**
+ * The context a catalogued case implies. Keeps the published output identical
+ * for the worked examples.
+ *
+ * A mentioned case has no published answer, so its expectation is computed by
+ * searching the original constrained model — and labelled as exactly that, so
+ * the program never attributes to the paper a number the paper does not print.
+ */
+function contextFor(qcase: CatalogCase, model: QuboModel): EmitContext {
+  const pages = pageLabel(qcase.pages);
+  const penalty = qcase.penalty ? model.P : null;
+
+  if (qcase.source === 'mentioned') {
+    return {
+      title: `QUBO Model Explorer — ${qcase.id} (named in ${qcase.section}, ${pages})`,
+      credit: `Problem named in ${CREDIT}
+The paper works no example of it; this instance is not from the paper.`,
+      penalty,
+      expectation: qcase.custom
+        ? { kind: 'none', note: 'Custom input: there is no reference answer to compare against.' }
+        : searchedExpectation(qcase, model),
+    };
+  }
+
   return {
     title: `QUBO Model Explorer — ${qcase.section} ${qcase.id} (${pages})`,
-    credit: 'Glover, Kochenberger & Du, "A Tutorial on Formulating and Using QUBO Models".',
-    penalty: qcase.penalty ? P : null,
+    credit: CREDIT,
+    penalty,
     expectation: qcase.custom
       ? {
           kind: 'none',
-          note: `Custom input: this model no longer matches ${qcase.section} of the paper,\nso there is no published answer to compare against.`,
+          note: `Custom input: this model no longer matches ${qcase.section} of the paper,
+so there is no published answer to compare against.`,
         }
       : {
           kind: 'answer',
@@ -69,6 +98,24 @@ function contextFor(qcase: QuboCase, P: number): EmitContext {
           yQubo: qcase.paperSolution.yQubo,
           yOriginal: qcase.paperSolution.yOriginal,
         },
+  };
+}
+
+/** Expectation from exhaustive search of the original model; `x` covers decision variables only. */
+function searchedExpectation(qcase: CatalogCase, model: QuboModel): Expectation {
+  if (qcase.model.numVars > CONSTRAINED_LIMIT) {
+    return { kind: 'none', note: 'Too many variables to compute a reference answer here.' };
+  }
+  const ref = solveConstrained(qcase.model);
+  if (ref.best === null) {
+    return { kind: 'none', note: 'The original model has no feasible assignment.' };
+  }
+  return {
+    kind: 'answer',
+    label: 'by exhaustive search of the original constrained model (not from the paper)',
+    x: ref.argmins[0],
+    yQubo: ref.best - model.constant,
+    yOriginal: ref.best,
   };
 }
 
@@ -150,8 +197,8 @@ function expectation(e: Expectation | undefined): string {
 }
 
 /** Tier 1 for a catalogued case. */
-export function emitTier1(qcase: QuboCase, model: QuboModel, samplerId: SamplerId): string {
-  return emitTier1For(contextFor(qcase, model.P), model, samplerId);
+export function emitTier1(qcase: CatalogCase, model: QuboModel, samplerId: SamplerId): string {
+  return emitTier1For(contextFor(qcase, model), model, samplerId);
 }
 
 /** Tier 1 — Q as a literal. */
@@ -190,9 +237,12 @@ export function emitModelLiteral(model: ConstrainedModel): string {
 }
 
 /** Tier 2 for a catalogued case. */
-export function emitTier2(qcase: QuboCase, model: QuboModel, samplerId: SamplerId): string {
-  return emitTier2For(contextFor(qcase, model.P), qcase.model, model, samplerId, {
-    modelComment: '# ── the original constrained model, exactly as the paper states it ──',
+export function emitTier2(qcase: CatalogCase, model: QuboModel, samplerId: SamplerId): string {
+  return emitTier2For(contextFor(qcase, model), qcase.model, model, samplerId, {
+    modelComment:
+      qcase.source === 'worked'
+        ? '# ── the original constrained model, exactly as the paper states it ──'
+        : '# ── the original constrained model (instance chosen here; the paper gives none) ──',
   });
 }
 
@@ -232,14 +282,14 @@ export function emitTier2For(
 
 /** Notebook form: install, then the script, split so cells can be re-run. */
 export function buildNotebook(
-  qcase: QuboCase,
+  qcase: CatalogCase,
   model: QuboModel,
   samplerId: SamplerId,
   tier: 1 | 2,
   installPackages: string[],
 ): NotebookCell[] {
   const s = findSampler(samplerId);
-  const ctx = contextFor(qcase, model.P);
+  const ctx = contextFor(qcase, model);
   const cells: NotebookCell[] = [
     // Colab needs the `!` prefix; the shell block above the script does not.
     { source: `!pip install ${[...new Set(installPackages)].join(' ')}` },

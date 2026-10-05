@@ -8,11 +8,11 @@
  */
 
 import type {
+  CatalogCase,
   Clause,
   ConstrainedModel,
   Constraint,
   Literal,
-  QuboCase,
   QuboModel,
   VarMeta,
 } from './types';
@@ -150,7 +150,7 @@ function clauseLatex(clause: Clause, names: string[]): string {
  * `P` defaults to the value the paper chose; passing a different one is exactly
  * what the penalty slider does.
  */
-export function derive(qcase: QuboCase, penalty?: number): Derivation {
+export function derive(qcase: CatalogCase, penalty?: number): Derivation {
   return deriveModel(qcase.model, penalty ?? qcase.penalty?.paperValue ?? 1);
 }
 

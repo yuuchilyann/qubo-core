@@ -7,7 +7,7 @@
  * published reference goes away.
  */
 
-import type { Clause, Graph, QuboCase } from '../types';
+import type { CatalogCase, Clause, Graph } from '../types';
 import { decisionVars, gridVars, row, unitRow } from './helpers';
 
 export type CaseEdit =
@@ -25,7 +25,7 @@ function edgeIndices(graph: Graph): [number, number][] {
     .filter((p): p is [number, number] => p[0] !== undefined && p[1] !== undefined);
 }
 
-export function applyEdit(base: QuboCase, edit: CaseEdit): QuboCase {
+export function applyEdit<C extends CatalogCase>(base: C, edit: CaseEdit): C {
   switch (edit.kind) {
     case 'numbers': {
       const s = edit.numbers;
@@ -60,6 +60,24 @@ export function applyEdit(base: QuboCase, edit: CaseEdit): QuboCase {
             quadratic: [],
             constraints: [],
             cutEdges: edges,
+          },
+        };
+      }
+      if (base.id === 'max-independent-set') {
+        // One `xᵢ + xⱼ ≤ 1` per edge (p.10 row 1), maximising the set size.
+        return {
+          ...base,
+          custom: true,
+          graph: edit.graph,
+          model: {
+            ...base.model,
+            numVars: n,
+            varMeta: decisionVars(n),
+            linear: new Array<number>(n).fill(1),
+            quadratic: [],
+            constraints: edges.map(([a, b], k) =>
+              unitRow(n, [a, b], '<=', 1, 'transform2', `edge ${k + 1}`),
+            ),
           },
         };
       }

@@ -153,17 +153,44 @@ export type SampleSet = {
 /** Which pedagogical group a case belongs to (mirrors the paper's own arc). */
 export type CaseGroup = 'natural' | 'knownPenalty' | 'general';
 
-/** A fully specified paper case. */
-export type QuboCase = {
+/** Fields every catalogued case carries, whatever its relationship to the paper. */
+type CaseCommon = {
   id: string;
-  /** e.g. `§5.2` — shown in the source badge. */
+  /**
+   * e.g. `§5.2` — shown in the source badge. For a worked example this is where
+   * the paper works it; for a mentioned one, where the paper names it.
+   */
   section: string;
   /** Inclusive page range in the PDF, e.g. `[21, 24]`. */
   pages: [number, number];
   group: CaseGroup;
-  /** The penalty the paper chose, plus the slider range we expose. */
+  /**
+   * The reference penalty plus the slider range we expose. For a worked example
+   * `paperValue` is the paper's choice; for a mentioned case the paper made no
+   * choice, so it is ours and the case file must say why.
+   */
   penalty: { paperValue: number; min: number; max: number; step: number } | null;
   model: ConstrainedModel;
+  /** Optional graph payload for the domain view / custom editor. */
+  graph?: Graph;
+  /** Whether the first release ships a custom-input editor for this case. */
+  editable: boolean;
+  /**
+   * Set once a reader edits the input data. The case then describes a different
+   * problem, so nothing may claim agreement with any reference — see `applyEdit`
+   * in `cases/mutate.ts`.
+   */
+  custom?: boolean;
+};
+
+/**
+ * A case the paper works numerically: it prints Q, the constant and the answer.
+ *
+ * The name predates `ExtendedCase` and is kept because consumers iterate
+ * `ALL_CASES` and read `paperQ` straight off each element.
+ */
+export type QuboCase = CaseCommon & {
+  source: 'worked';
   /** The Q matrix as printed in the paper — used ONLY for the reconciliation diff. */
   paperQ: number[][];
   /** The additive constant the paper states (0 when it drops out). */
@@ -178,17 +205,35 @@ export type QuboCase = {
    * asserted by the reconciliation harness.
    */
   paperSolution: { x: number[]; yQubo: number; yOriginal: number };
-  /** Optional graph payload for the domain view / custom editor. */
-  graph?: Graph;
-  /** Whether the first release ships a custom-input editor for this case. */
-  editable: boolean;
-  /**
-   * Set once a reader edits the input data. `paperQ` / `paperSolution` then
-   * describe a different problem, so nothing may claim agreement with the
-   * publication — see `applyEdit` in `cases/mutate.ts`.
-   */
-  custom?: boolean;
 };
+
+/**
+ * A problem the paper names but never works: no instance, no Q, no answer.
+ *
+ * The instance is ours, so there is nothing published to diff against and the
+ * case must not pretend otherwise — it deliberately has no `paperQ`. What
+ * replaces it is a reference that does not run through `derive()` at all:
+ * exhaustive search over the ORIGINAL constrained model (`solveConstrained`),
+ * which the QUBO optimum has to reproduce. Inventing a `paperQ` from our own
+ * output instead would make the check compare `derive()` with itself.
+ */
+export type ExtendedCase = CaseCommon & {
+  source: 'mentioned';
+  /**
+   * An optimum the paper implies without printing it, when one exists — e.g. a
+   * value that follows by a theorem from one of the worked examples. Asserted
+   * against the constrained search, so it ties the instance back to a number
+   * the paper does print.
+   */
+  anchor?: {
+    yOriginal: number;
+    /** How the value follows, in English — quoted by the harness and the emitted code. */
+    via: string;
+  };
+};
+
+/** Anything in the catalogue: a worked example or a mentioned extension. */
+export type CatalogCase = QuboCase | ExtendedCase;
 
 /** Guard rails for browser-side solving (see the scale meter). */
 export const EXACT_LIMIT = 24;

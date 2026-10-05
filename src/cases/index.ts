@@ -1,6 +1,7 @@
 /** The case catalogue, ordered the way the paper builds its argument. */
 
-import type { CaseGroup, QuboCase } from '../types';
+import type { CaseGroup, CatalogCase, ExtendedCase, QuboCase } from '../types';
+import { maxIndependentSet } from './extended';
 import { helloWorld, maxCut, numberPartitioning } from './natural';
 import { max2Sat, minVertexCover, setPacking } from './knownPenalty';
 import {
@@ -16,9 +17,14 @@ export { COLORING_GRAPH } from './general';
 export { helloWorld };
 
 /**
+ * The paper's eleven worked examples — every element carries a `paperQ`.
+ *
  * `helloWorld` is listed here too so the verification harness covers all eleven
  * cases, but the app gives it its own onboarding tab rather than filing it under
  * a group.
+ *
+ * Kept to worked examples only: consumers iterate this list and read `paperQ`
+ * off every element, so a case without one does not belong here.
  */
 export const ALL_CASES: QuboCase[] = [
   helloWorld,
@@ -34,17 +40,23 @@ export const ALL_CASES: QuboCase[] = [
   quadraticKnapsack,
 ];
 
+/** Problems the paper names without working them; see `cases/extended.ts`. */
+export const EXTENDED_CASES: ExtendedCase[] = [maxIndependentSet];
+
+/** Everything the site can show: the worked examples, then the extensions. */
+export const CATALOG: CatalogCase[] = [...ALL_CASES, ...EXTENDED_CASES];
+
 /** Cases shown under the three group tabs (everything except the Hello World). */
-export const GROUPED_CASES: QuboCase[] = ALL_CASES.filter((c) => c.id !== 'hello-world');
+export const GROUPED_CASES: CatalogCase[] = CATALOG.filter((c) => c.id !== 'hello-world');
 
 export const GROUP_ORDER: CaseGroup[] = ['natural', 'knownPenalty', 'general'];
 
-export function casesInGroup(group: CaseGroup): QuboCase[] {
+export function casesInGroup(group: CaseGroup): CatalogCase[] {
   return GROUPED_CASES.filter((c) => c.group === group);
 }
 
-export function findCase(id: string): QuboCase | undefined {
-  return ALL_CASES.find((c) => c.id === id);
+export function findCase(id: string): CatalogCase | undefined {
+  return CATALOG.find((c) => c.id === id);
 }
 
 /**

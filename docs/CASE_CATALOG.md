@@ -12,7 +12,8 @@
 論文印出的 Q 另存 `paperQ`，只用來做 diff。
 
 ```ts
-type QuboCase = {
+type QuboCase = {          // 論文算例；ALL_CASES 只收這種
+  source: 'worked'
   section: string          // '§5.2'
   pages: [number, number]  // 勾稽錨點
   model: ConstrainedModel  // 目標式 + 約束 + 每條約束用哪個懲罰配方
@@ -26,6 +27,12 @@ type QuboCase = {
 `yOriginal = yQubo + constant` 這個不變式對每個案例都成立，也被 harness 斷言；
 論文本身就是成對引用這兩個值的（例如 §5.4：「Solving QUBO gives y = −982 … we get
 the original objective function value of 1200 − 982 = 218」）。
+
+另一種是 `ExtendedCase`（`source: 'mentioned'`），給論文**只點名、沒有算例**的問題，
+見下方「延伸案例」。它刻意**沒有** `paperQ`。兩者合稱 `CatalogCase`，完整目錄是
+`CATALOG = [...ALL_CASES, ...EXTENDED_CASES]`。
+
+`ALL_CASES` 維持只收論文算例，因為下游消費端會逐一讀它的 `paperQ`。
 
 ## 懲罰配方
 
@@ -55,6 +62,48 @@ the original objective function value of 1200 − 982 = 218」）。
 | 5.3 | `general-01` | 10 | 10 | −900 | 916 | 16 | `transform1` ×3 + slack |
 | 5.4 | `qap` | 9 | 200 | 1200 | −982 | 218 | `transform1` ×6 |
 | 5.5 | `quadratic-knapsack` | 6 | 10 | −2560 | 2588 | 28 | `transform1` ×1 + slack |
+
+第 7 道檢查「約束窮舉 == 論文原始 y」對十一案例全部成立：`solveConstrained()` 不經
+QUBO，直接列舉原始決策變數、丟掉不可行的、用原始目標式計分。它和 `derive()` 沒有任何
+共用程式碼，所以能抓到「推導配方在每個案例都錯得一樣」這種 diff 抓不到的錯誤。
+
+§3.1 能通過是因為該實例恰好可以完美平分：平衡式在模型裡被宣告成硬性等式。
+
+## 延伸案例（論文只點名的問題）
+
+論文 §1（pp.3–4）列了二十多種「QUBO 涵蓋的問題」，§6 也提到幾種，但只有 §2–§5.5
+這十一個有算例。其餘的問題論文**沒有給實例、沒有印 Q、也沒有答案**。
+
+延伸案例的實例是本庫自己選的，所以沒有東西可以 diff。替代的參照是**約束窮舉**，
+它不經過 `derive()`。`verifyExtended()` 斷言：
+
+| 檢查 | 證明什麼 |
+|---|---|
+| 原始模型有可行解 | 實例本身有答案 |
+| QUBO 最優 + 常數 == 約束窮舉最優 | 推導正確，且懲罰把最優值留在可行解上 |
+| 每個 QUBO 最優解都可行 | P 夠大：沒有不可行解與最優值打平 |
+| QUBO 簡併度 == 約束窮舉簡併度（無 slack 時） | 兩邊的最優解一一對應 |
+| 約束窮舉最優 == `anchor`（若有） | 把實例接回論文**有**印出的某個數字 |
+
+**不要從自己的輸出產生 `paperQ` 填進去**：那會讓檢查變成 `derive()` 和自己比對。
+
+選實例時盡量沿用論文已有的資料，才能設 `anchor`。
+
+| 點名處 | id | n | P（本庫選） | 常數 | 最優 | `anchor` 依據 | 配方 |
+|---|---|---|---|---|---|---|---|
+| §1 p.4、§6 p.34 | `max-independent-set` | 5 | 2 | 0 | 2 | 補集是頂點覆蓋（Gallai）：5 − §4.1 的 3 | `transform2` ×6 |
+
+### Max Independent Set — 同一張圖，答案由 §4.1 推得
+
+沿用 §3.2／§4.1 的 5 點圖。每條邊 `xᵢ + xⱼ ≤ 1` 是 p.10 表格第 1 列，也就是 §4.2 用的
+`P·xᵢxⱼ`，p.10 說 Pardalos & Xue 把它用在 maximum clique「and related problems」。
+
+獨立集的補集恰好是頂點覆蓋，所以 α(G) = n − τ(G) = 5 − 3 = 2，其中 3 是 §4.1 印出的
+答案。論文沒寫這個 2，但它由論文印出的數字推得，這就是 `anchor`。
+
+P 由本庫決定：同時選一條邊的兩端，目標 +1、懲罰 −P，所以 `P > 1` 才保證嚴格較差。
+`P = 1` 時有 3 個不可行解與最優值打平（簡併度 7 而非 4），harness 的負面測試會抓到；
+滑桿可以讓讀者親眼看到這件事。
 
 ## 值得注意的幾點
 
@@ -114,7 +163,9 @@ p.28 印出的目標函數與 p.29 印出的 Q 矩陣互相矛盾：
 
 ## 新增案例的步驟
 
-1. 在 `src/cases/` 對應的 group 檔裡加一個 `QuboCase`
+### 論文算例
+
+1. 在 `src/cases/` 對應的 group 檔裡加一個 `QuboCase`（`source: 'worked'`）
 2. 填 `model`（原始約束模型）、`paperQ`、`paperConstant`、`paperSolution`
 3. 加進 `src/cases/index.ts` 的 `ALL_CASES`
 4. 在 `src/i18n/locales/zh.tsx` 加四個情境字串（`case.<id>.name` / `.scenario` /
@@ -124,3 +175,14 @@ p.28 印出的目標函數與 p.29 印出的 Q 矩陣互相矛盾：
 
 如果 `derive()` 算不出 `paperQ`，**先懷疑 `model` 宣告錯了**，不要去改 `paperQ`。
 `paperQ` 是外部真值，不是可以調整到符合的參數。
+
+### 延伸案例
+
+1. 確認問題確實出現在論文裡（記下節與頁），並判斷它不是自有方法
+2. 在 `src/cases/extended.ts` 加一個 `ExtendedCase`（`source: 'mentioned'`），
+   `section` / `pages` 指向**點名處**；`group` 依所用的配方歸類
+3. 實例盡量沿用論文已有的資料；能從論文數字推得最優值時填 `anchor`，並寫明推導
+4. 在檔案註解裡寫明 P 為什麼這樣選（論文沒選）
+5. 加進 `src/cases/index.ts` 的 `EXTENDED_CASES`
+6. 站台端：情境字串、`SCENARIOS` 註冊，以及頁面上「論文只點名」的標示
+7. `npm run verify:all`

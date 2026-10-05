@@ -15,6 +15,7 @@ import { TUTORIAL_GRAPH } from './natural';
  * which is why the two degree-3 nodes read −23 and the degree-2 nodes −15.
  */
 export const minVertexCover: QuboCase = {
+  source: 'worked',
   id: 'min-vertex-cover',
   section: '§4.1',
   pages: [11, 12],
@@ -51,6 +52,7 @@ export const minVertexCover: QuboCase = {
  * negative (`−P/2 = −3` at `P = 6`).
  */
 export const setPacking: QuboCase = {
+  source: 'worked',
   id: 'set-packing',
   section: '§4.2',
   pages: [13, 14],
@@ -90,6 +92,7 @@ export const setPacking: QuboCase = {
  * lone `−x₂x₃` term splits into ∓½ across the symmetric pair.
  */
 export const max2Sat: QuboCase = {
+  source: 'worked',
   id: 'max-2-sat',
   section: '§4.3',
   pages: [14, 16],
