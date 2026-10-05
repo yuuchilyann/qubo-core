@@ -4,6 +4,7 @@ import type { CaseGroup, CatalogCase, ExtendedCase, QuboCase } from '../types';
 import {
   capitalBudgeting,
   cliquePartitioning,
+  communityDetection,
   constraintSatisfaction,
   discreteTomography,
   graphPartitioning,
@@ -16,7 +17,10 @@ import {
   multipleKnapsack,
   pMedian,
   portfolio,
+  shortestPath,
   taskAllocation,
+  trafficFlow,
+  travellingSalesman,
   warehouseLocation,
 } from './extended';
 import { helloWorld, maxCut, numberPartitioning } from './natural';
@@ -34,6 +38,8 @@ export { COLORING_GRAPH } from './general';
 export {
   BUDGET_ROWS,
   CLUSTER_WEIGHTS,
+  COMMUNITY_GRAPH,
+  COMMUNITY_WEIGHTS,
   FACILITY_CUSTOMERS,
   FACILITY_OPEN_COST,
   FACILITY_SITES,
@@ -42,6 +48,8 @@ export {
   MATCHING_WEIGHTS,
   NAE_TRIPLES,
   ORDERING_VOTES,
+  PATH_ARCS,
+  PATH_NODES,
   PORTFOLIO_COV,
   PORTFOLIO_RETURNS,
   PROJECT_VALUES,
@@ -49,6 +57,8 @@ export {
   TASK_COMM,
   TASK_EXEC,
   TOMOGRAPHY_SUMS,
+  TRAFFIC_ROUTES,
+  TSP_DIST,
 } from './extended';
 export { helloWorld };
 
@@ -94,6 +104,10 @@ export const EXTENDED_CASES: ExtendedCase[] = [
   graphPartitioning,
   portfolio,
   maxMatching,
+  communityDetection,
+  shortestPath,
+  travellingSalesman,
+  trafficFlow,
 ];
 
 /** Everything the site can show: the worked examples, then the extensions. */

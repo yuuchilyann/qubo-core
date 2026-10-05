@@ -9,7 +9,7 @@
  * so that an `anchor` can tie the optimum to a number the paper does print.
  */
 
-import type { Clause, ExtendedCase, VarMeta } from '../types';
+import type { Clause, ExtendedCase, Graph, VarMeta } from '../types';
 import { decisionVars, labelledGrid, neg, nonEdges, pos, row, sub, unitRow } from './helpers';
 import { NUMBERS, TUTORIAL_GRAPH } from './natural';
 
@@ -879,6 +879,297 @@ export const maxMatching: ExtendedCase = {
         'transform2',
         `node ${v}: at most one matched edge`,
       ),
+    ),
+  },
+};
+
+// ── batch 5: §6 citations of medium size ────────────────────────────────────
+
+/** Six nodes: two triangles joined by the bridge 3–4. */
+export const COMMUNITY_GRAPH: Graph = {
+  nodes: [1, 2, 3, 4, 5, 6],
+  edges: [
+    [1, 2],
+    [1, 3],
+    [2, 3],
+    [3, 4],
+    [4, 5],
+    [4, 6],
+    [5, 6],
+  ],
+};
+const COMMUNITIES = 2;
+const communityTwoM = COMMUNITY_GRAPH.edges.length * 2;
+const communityDeg = COMMUNITY_GRAPH.nodes.map(
+  (v) => COMMUNITY_GRAPH.edges.filter(([a, b]) => a === v || b === v).length,
+);
+const communityAdjacent = (a: number, b: number) =>
+  COMMUNITY_GRAPH.edges.some(([p, q]) => (p === a && q === b) || (p === b && q === a));
+/** `2m·A_ij − k_i·k_j` for every pair i < j: the modularity matrix, scaled to integers. */
+export const COMMUNITY_WEIGHTS: { i: number; j: number; w: number }[] = COMMUNITY_GRAPH.nodes.flatMap(
+  (a, i) =>
+    COMMUNITY_GRAPH.nodes.slice(i + 1).map((b, k) => ({
+      i,
+      j: i + 1 + k,
+      w: communityTwoM * (communityAdjacent(a, b) ? 1 : 0) - communityDeg[i] * communityDeg[i + 1 + k],
+    })),
+);
+
+/**
+ * Community Detection by modularity, cited in §6 (p.32: "graph clustering
+ * (quantum community detection problems) in Negre et al. (2018, 2019)"; p.34
+ * again under modularity maximization).
+ *
+ * The form Negre et al. use: k communities, `x_{ik} = 1` puts node i in
+ * community k, one-hot rows `Σ_k x_{ik} = 1` (Transformation #1), and maximise
+ * modularity `Q = (1/2m) Σ_{ij} (A_ij − k_i k_j / 2m) δ(c_i, c_j)`. Modularity
+ * is a fraction, so the objective here is scaled by (2m)² to keep every
+ * coefficient an integer: `Σ_{i<j} (2m·A_ij − k_i k_j) Σ_k x_{ik} x_{jk}`. The
+ * diagonal terms are the same for every partition and drop out. The page
+ * converts back: `Q = (2·objective − Σ k_i²) / (2m)²`.
+ *
+ * Two triangles joined by one edge — the textbook example. The best split is
+ * the two triangles, objective 52, Q = 70/196 = 5/14 ≈ 0.357. It appears twice
+ * because the two community labels can swap.
+ *
+ * P is ours, by the argument used for `cliquePartitioning`: P above any node's
+ * total |weight| (largest 33, nodes 3 and 4); 34.
+ */
+export const communityDetection: ExtendedCase = {
+  source: 'mentioned',
+  mention: 'cited',
+  id: 'community-detection',
+  section: '§6',
+  pages: [32, 32],
+  group: 'general',
+  penalty: { paperValue: 34, min: 0, max: 60, step: 1 },
+  editable: false,
+  graph: COMMUNITY_GRAPH,
+  model: {
+    sense: 'max',
+    numVars: COMMUNITY_GRAPH.nodes.length * COMMUNITIES,
+    varMeta: labelledGrid(COMMUNITY_GRAPH.nodes.length, COMMUNITIES),
+    linear: new Array<number>(COMMUNITY_GRAPH.nodes.length * COMMUNITIES).fill(0),
+    quadratic: COMMUNITY_WEIGHTS.flatMap(({ i, j, w }) =>
+      Array.from({ length: COMMUNITIES }, (_, k) => ({
+        i: i * COMMUNITIES + k,
+        j: j * COMMUNITIES + k,
+        coef: w,
+      })),
+    ),
+    constraints: COMMUNITY_GRAPH.nodes.map((v, i) =>
+      unitRow(
+        COMMUNITY_GRAPH.nodes.length * COMMUNITIES,
+        Array.from({ length: COMMUNITIES }, (_, k) => i * COMMUNITIES + k),
+        '=',
+        1,
+        'transform1',
+        `node ${v}: exactly one community`,
+      ),
+    ),
+  },
+};
+
+/** Directed arcs `[from, to, length]` of a small road network, S to T. */
+export const PATH_NODES = ['S', 'A', 'B', 'C', 'T'];
+export const PATH_ARCS: [string, string, number][] = [
+  ['S', 'A', 2],
+  ['S', 'B', 4],
+  ['A', 'B', 1],
+  ['A', 'C', 5],
+  ['B', 'C', 2],
+  ['B', 'T', 6],
+  ['C', 'T', 1],
+];
+
+/**
+ * Shortest Path, cited in §6 (p.31: "Pakin (2017) presents an algorithm for
+ * finding the shortest path through a maze by expressing the shortest path as
+ * the globally optimal value of an Ising Hamiltonian").
+ *
+ * This is the standard flow formulation, NOT the maze encoding of the cited
+ * work: one variable per arc, minimise total length, and at every node
+ * "out minus in" equals +1 at S, −1 at T and 0 elsewhere — five equality rows
+ * with coefficients ±1, Transformation #1. The network has no cycles, so no
+ * detached loop can satisfy the rows on its own.
+ *
+ * The shortest route is S→A→B→C→T, length 6, unique — the route with the MOST
+ * arcs; the two-arc S→B→T is the longest at 10.
+ *
+ * P is ours. Lengths are non-negative and a violated row costs at least P, so
+ * P above any feasible route works; S→B→T is 10, so `P > 10`; 11.
+ */
+export const shortestPath: ExtendedCase = {
+  source: 'mentioned',
+  mention: 'cited',
+  id: 'shortest-path',
+  section: '§6',
+  pages: [31, 31],
+  group: 'general',
+  penalty: { paperValue: 11, min: 0, max: 25, step: 1 },
+  editable: false,
+  model: {
+    sense: 'min',
+    numVars: PATH_ARCS.length,
+    varMeta: PATH_ARCS.map(([a, b], k) => ({
+      name: `x${sub(k + 1)}`,
+      kind: 'decision' as const,
+      origin: `${a}→${b}`,
+    })),
+    linear: PATH_ARCS.map(([, , c]) => c),
+    quadratic: [],
+    constraints: PATH_NODES.map((v) => {
+      const net = v === 'S' ? 1 : v === 'T' ? -1 : 0;
+      return row(
+        PATH_ARCS.map(([a, b]) => (a === v ? 1 : 0) - (b === v ? 1 : 0)),
+        '=',
+        net,
+        'transform1',
+        `node ${v}: out − in = ${net}`,
+      );
+    }),
+  },
+};
+
+/** Symmetric distances between four cities, `[a, b, d]` with a < b. */
+export const TSP_DIST: [number, number, number][] = [
+  [1, 2, 2],
+  [1, 3, 9],
+  [1, 4, 10],
+  [2, 3, 6],
+  [2, 4, 4],
+  [3, 4, 3],
+];
+const tspD = (a: number, b: number) =>
+  TSP_DIST.find(([p, q]) => (p === a && q === b) || (p === b && q === a))![2];
+/** Cities 2–4 at positions 2–4; city 1 is fixed at position 1. */
+const TSP_FREE = [2, 3, 4];
+const tspVar = (city: number, position: number) =>
+  TSP_FREE.indexOf(city) * TSP_FREE.length + (position - 2);
+
+/**
+ * Vehicle routing, cited in §6 (p.32: "vehicle routing problems in Feld et
+ * al. (2018), Clark et al. (2019) and Ohzeki et al. (2018)") — here its
+ * single-vehicle, uncapacitated core, the Travelling Salesman Problem. The
+ * cited works add vehicles and capacities on top of exactly this structure.
+ *
+ * `x_{v,p} = 1` puts city v at position p of the tour. Every city takes one
+ * position and every position one city (Transformation #1), and consecutive
+ * positions pay their distance: `Σ_p Σ_{u≠v} d_{uv} x_{u,p} x_{v,p+1}`.
+ * City 1 is fixed at position 1 — a standard reduction that removes the four
+ * rotations of every tour without excluding any — so the QUBO is 3×3 = 9
+ * variables instead of 16.
+ *
+ * Shortest tour 1→2→4→3→1, length 18; it appears twice because a tour and its
+ * reverse cost the same.
+ *
+ * P is ours. Distances are non-negative and a violated row costs at least P,
+ * so P above any feasible tour works; 1→2→3→4→1 is 21, so `P > 21`; 22.
+ */
+export const travellingSalesman: ExtendedCase = {
+  source: 'mentioned',
+  mention: 'cited',
+  id: 'travelling-salesman',
+  section: '§6',
+  pages: [32, 32],
+  group: 'general',
+  penalty: { paperValue: 22, min: 0, max: 40, step: 1 },
+  editable: false,
+  model: {
+    sense: 'min',
+    numVars: TSP_FREE.length * TSP_FREE.length,
+    varMeta: TSP_FREE.flatMap((v) =>
+      [2, 3, 4].map((p) => ({
+        name: `x${sub(tspVar(v, p) + 1)}`,
+        kind: 'decision' as const,
+        origin: `x${sub(v)},${sub(p)}`,
+      })),
+    ),
+    // The leg from city 1 into position 2, and from position 4 back to city 1.
+    linear: TSP_FREE.flatMap((v) => [2, 3, 4].map((p) => (p === 2 || p === 4 ? tspD(1, v) : 0))),
+    quadratic: [2, 3].flatMap((p) =>
+      TSP_FREE.flatMap((u) =>
+        TSP_FREE.filter((v) => v !== u).map((v) => {
+          const a = tspVar(u, p);
+          const b = tspVar(v, p + 1);
+          return { i: Math.min(a, b), j: Math.max(a, b), coef: tspD(u, v) };
+        }),
+      ),
+    ),
+    constraints: [
+      ...TSP_FREE.map((v) =>
+        unitRow(9, [2, 3, 4].map((p) => tspVar(v, p)), '=', 1, 'transform1', `city ${v}: exactly one position`),
+      ),
+      ...[2, 3, 4].map((p) =>
+        unitRow(9, TSP_FREE.map((v) => tspVar(v, p)), '=', 1, 'transform1', `position ${p}: exactly one city`),
+      ),
+    ],
+  },
+};
+
+/** Candidate routes per car, as lists of road segments — the cited set-up, in miniature. */
+export const TRAFFIC_ROUTES: string[][][] = [
+  [
+    ['a', 'c', 'd'],
+    ['a', 'e'],
+    ['b', 'f', 'i'],
+  ],
+  [
+    ['c', 'd'],
+    ['e', 'g'],
+    ['c', 'h'],
+  ],
+  [['c', 'd'], ['f', 'g'], ['h']],
+];
+const trafficVar = (car: number, route: number) => car * 3 + route;
+const trafficRoutes = TRAFFIC_ROUTES.flatMap((routes, car) =>
+  routes.map((segs, r) => ({ v: trafficVar(car, r), segs })),
+);
+/** The scaling rule of Neukart et al.: the most segment-cost terms any one car appears in. */
+const NEUKART_LAMBDA = Math.max(...TRAFFIC_ROUTES.map((routes) => new Set(routes.flat()).size));
+
+/**
+ * Traffic Flow Optimization, cited in §6 (p.32: "traffic-flow optimization in
+ * Neukart et al. (2017)"), following the QUBO of that paper.
+ *
+ * Each car chooses one of three candidate routes, `q_{ij} = 1` for car i on
+ * route j, and congestion is the SQUARE of the number of chosen routes using
+ * each road segment, summed over segments — so the objective is quadratic by
+ * construction: each route contributes its segment count on the diagonal, and
+ * two routes sharing s segments contribute `2s` off the diagonal. "One route
+ * per car" is Transformation #1.
+ *
+ * The scaling λ follows THEIR rule, not a bound of ours: "the maximum number of
+ * times some car i is present in cost functions" — here 7, the seven distinct
+ * segments among car 1's routes. The constrained-search check confirms that it
+ * suffices.
+ *
+ * Three cars whose original routes (route 1 each) all run through segments c
+ * and d: congestion 19. The optimum moves car 1 to route 2 and car 3 to
+ * route 3, leaving every segment with one car: congestion 5, unique.
+ */
+export const trafficFlow: ExtendedCase = {
+  source: 'mentioned',
+  mention: 'cited',
+  id: 'traffic-flow',
+  section: '§6',
+  pages: [32, 32],
+  group: 'general',
+  penalty: { paperValue: NEUKART_LAMBDA, min: 0, max: 20, step: 1 },
+  editable: false,
+  model: {
+    sense: 'min',
+    numVars: 9,
+    varMeta: labelledGrid(3, 3),
+    linear: trafficRoutes.map(({ segs }) => segs.length),
+    quadratic: trafficRoutes.flatMap((r1, a) =>
+      trafficRoutes.slice(a + 1).flatMap((r2) => {
+        const shared = r1.segs.filter((s) => r2.segs.includes(s)).length;
+        return shared ? [{ i: r1.v, j: r2.v, coef: 2 * shared }] : [];
+      }),
+    ),
+    constraints: TRAFFIC_ROUTES.map((_, car) =>
+      unitRow(9, [0, 1, 2].map((r) => trafficVar(car, r)), '=', 1, 'transform1', `car ${car + 1}: exactly one route`),
     ),
   },
 };
