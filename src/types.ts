@@ -233,6 +233,13 @@ export type QuboCase = CaseCommon & {
 export type ExtendedCase = CaseCommon & {
   source: 'mentioned';
   /**
+   * How the paper mentions the problem. `listed` (the default): it is in the
+   * §1 list of problems QUBO encompasses. `cited`: it only appears in §6, as
+   * the subject of someone else's work the paper cites — a weaker claim, and
+   * the page should say which it is.
+   */
+  mention?: 'listed' | 'cited';
+  /**
    * An optimum the paper implies without printing it, when one exists — e.g. a
    * value that follows by a theorem from one of the worked examples. Asserted
    * against the constrained search, so it ties the instance back to a number

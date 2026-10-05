@@ -81,7 +81,7 @@ npm run verify:all
 以 git dependency 釘 tag：
 
 ```json
-{ "dependencies": { "qubo-core": "github:yuuchilyann/qubo-core#v0.7.0" } }
+{ "dependencies": { "qubo-core": "github:yuuchilyann/qubo-core#v0.8.0" } }
 ```
 
 | tag | 內容 |
@@ -93,6 +93,7 @@ npm run verify:all
 | `v0.5.0` | **延伸案例**：論文只點名、沒有算例的問題（`ExtendedCase`，首例 Max Independent Set）。新增 `solveConstrained()`（不經 QUBO、直接窮舉原始約束模型），十一個論文案例也多一道這個檢查。`ALL_CASES` 維持只收論文算例；全目錄改用 `CATALOG`，`findCase` / `casesInGroup` 回傳 `CatalogCase`，消費端要先以 `source` 收窄才能讀 `paperQ` |
 | `v0.6.0` | 延伸案例增加到十一個，皆不需改引擎：Max Clique（可自訂圖）、Max Diversity、Discrete Tomography、Task Allocation、Capital Budgeting、Multiple Knapsack、P-Median、Warehouse Location、Linear Ordering、Clique Partitioning。新增 helper `labelledGrid`、`nonEdges` 與各案例的資料常數匯出 |
 | `v0.7.0` | **引擎擴充：高次項降階**（§7 第 4 點，Rosenberg）。子句可以有任意多個文字（`Clause` 由兩元組放寬為 `Literal[]`），三次以上的項以輔助變數降回二次。新增 `src/reduce.ts`（Python 端同步移植）、`VarMeta.kind` 新增 `'aux'`（附 `auxOf`）、`DerivationStep.kind` 新增 `'reduction'`、`Derivation.auxInfo`。新案例 Max 3-SAT、CSP（Not-All-Equal）。**行為變更**：子句是目標函數本身，權重固定為 1，不再乘上 P；P 在子句模型裡只用於降階懲罰。所有目錄內的 2-SAT 都在 P = 1 推導，Q 不變；對 `kind` 或 `step.kind` 做窮舉 switch 的消費端要補新成員 |
+| `v0.8.0` | §6 引用的問題：Graph Partitioning、Portfolio、Max Weight Matching。`ExtendedCase` 新增選填欄位 `mention: 'listed' \| 'cited'`，區分 §1 清單與 §6 引用；產碼器與驗證輸出隨之區分 named／cited |
 
 沒有 build 步驟：原始碼以 TypeScript 出貨，因為消費端都是 bundler 環境，
 而且這樣驗證腳本檢查的就是前端實際載入的那些模組，不是它們的編譯副本。

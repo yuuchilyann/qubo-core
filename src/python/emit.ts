@@ -71,8 +71,8 @@ function contextFor(qcase: CatalogCase, model: QuboModel): EmitContext {
 
   if (qcase.source === 'mentioned') {
     return {
-      title: `QUBO Model Explorer — ${qcase.id} (named in ${qcase.section}, ${pages})`,
-      credit: `Problem named in ${CREDIT}
+      title: `QUBO Model Explorer — ${qcase.id} (${qcase.mention === 'cited' ? 'cited' : 'named'} in ${qcase.section}, ${pages})`,
+      credit: `Problem ${qcase.mention === 'cited' ? 'cited' : 'named'} in ${CREDIT}
 The paper works no example of it; this instance is not from the paper.`,
       penalty,
       expectation: qcase.custom

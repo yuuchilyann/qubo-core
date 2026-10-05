@@ -40,7 +40,10 @@ try {
 
   for (const report of verifyAll()) {
     const head = report.ok ? `${GREEN}PASS${RESET}` : `${RED}FAIL${RESET}`;
-    const tag = report.source === 'worked' ? '' : `  ${DIM}(named in the paper, not worked — no paper Q)${RESET}`;
+    const tag =
+      report.source === 'worked'
+        ? ''
+        : `  ${DIM}(${report.mention === 'cited' ? 'cited in §6' : 'named in the paper'}, not worked — no paper Q)${RESET}`;
     console.log(`${head}  ${report.section.padEnd(6)} ${report.id}  ${DIM}n=${report.n}${RESET}${tag}`);
     for (const check of report.checks) {
       const mark = check.ok ? `${GREEN}✓${RESET}` : `${RED}✗${RESET}`;

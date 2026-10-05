@@ -41,6 +41,8 @@ export type CaseReport = {
   id: string;
   section: string;
   source: CatalogCase['source'];
+  /** For an extended case: listed in §1, or only cited in §6. */
+  mention?: 'listed' | 'cited';
   n: number;
   checks: CheckResult[];
   ok: boolean;
@@ -213,6 +215,7 @@ export function verifyExtended(qcase: ExtendedCase): CaseReport {
     id: qcase.id,
     section: qcase.section,
     source: qcase.source,
+    mention: qcase.mention ?? 'listed',
     n: model.n,
     checks,
     ok: checks.every((c) => c.ok),

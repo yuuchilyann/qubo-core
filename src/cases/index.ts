@@ -6,13 +6,16 @@ import {
   cliquePartitioning,
   constraintSatisfaction,
   discreteTomography,
+  graphPartitioning,
   linearOrdering,
   maxClique,
   maxDiversity,
   maxIndependentSet,
+  maxMatching,
   max3Sat,
   multipleKnapsack,
   pMedian,
+  portfolio,
   taskAllocation,
   warehouseLocation,
 } from './extended';
@@ -36,8 +39,11 @@ export {
   FACILITY_SITES,
   KNAPSACK_CAPS,
   KNAPSACK_WEIGHTS,
+  MATCHING_WEIGHTS,
   NAE_TRIPLES,
   ORDERING_VOTES,
+  PORTFOLIO_COV,
+  PORTFOLIO_RETURNS,
   PROJECT_VALUES,
   SAT3_CLAUSES,
   TASK_COMM,
@@ -85,6 +91,9 @@ export const EXTENDED_CASES: ExtendedCase[] = [
   cliquePartitioning,
   max3Sat,
   constraintSatisfaction,
+  graphPartitioning,
+  portfolio,
+  maxMatching,
 ];
 
 /** Everything the site can show: the worked examples, then the extensions. */

@@ -721,3 +721,164 @@ export const constraintSatisfaction: ExtendedCase = {
     ]),
   },
 };
+
+// ── batch 4: problems the paper cites in §6 ────────────────────────────────
+// Not in the §1 list: §6 names them only as subjects of work it cites, so each
+// case carries `mention: 'cited'` and the page says so.
+
+/**
+ * Graph Partitioning, cited in §6 (p.32: "graph partitioning problems in
+ * Mniszewski et al. (2016) and Ushijima-Mwesigwa et al. (2017)").
+ *
+ * Split the nodes into two groups of fixed size and cut as FEW edges as
+ * possible — Max-Cut turned around, plus a balance row. The cut count is
+ * `Σ_{(i,j)∈E} (xᵢ + xⱼ − 2xᵢxⱼ)`, written out as linear and quadratic terms
+ * because this objective is minimised; the size row `Σxⱼ = 2` is
+ * Transformation #1.
+ *
+ * §3.2's graph again, so the page can be read against Max-Cut: maximising the
+ * cut gives 5, minimising it with groups of 2 and 3 gives 2 — {1, 2} against
+ * the triangle {3, 4, 5}, unique. With five nodes the halves cannot be equal,
+ * so "as balanced as possible" is the honest reading.
+ *
+ * P is ours. The objective is non-negative and a violated size row costs at
+ * least P, so P above the cost of any feasible split works; nodes 1 and 2
+ * together cut 2 edges, so `P > 2`; 3.
+ */
+const PARTITION_SIZE = 2;
+const tutorialDegree = TUTORIAL_GRAPH.nodes.map(
+  (v) => TUTORIAL_GRAPH.edges.filter(([a, b]) => a === v || b === v).length,
+);
+
+export const graphPartitioning: ExtendedCase = {
+  source: 'mentioned',
+  mention: 'cited',
+  id: 'graph-partitioning',
+  section: '§6',
+  pages: [32, 32],
+  group: 'general',
+  penalty: { paperValue: 3, min: 0, max: 10, step: 1 },
+  editable: false,
+  graph: TUTORIAL_GRAPH,
+  model: {
+    sense: 'min',
+    numVars: 5,
+    varMeta: decisionVars(5),
+    linear: tutorialDegree,
+    quadratic: TUTORIAL_GRAPH.edges.map(([a, b]) => ({ i: a - 1, j: b - 1, coef: -2 })),
+    constraints: [
+      unitRow(5, [0, 1, 2, 3, 4], '=', PARTITION_SIZE, 'transform1', `group 1 has exactly ${PARTITION_SIZE} nodes`),
+    ],
+  },
+};
+
+/** Expected return per asset, and the covariance matrix (integer, positive definite). */
+export const PORTFOLIO_RETURNS = [8, 12, 6, 10, 9];
+export const PORTFOLIO_COV = [
+  [7, 8, 2, 3, 3],
+  [8, 17, 3, 4, 5],
+  [2, 3, 2, 2, 1],
+  [3, 4, 2, 7, 1],
+  [3, 5, 1, 1, 4],
+];
+const PORTFOLIO_PICK = 3;
+
+/**
+ * Portfolio selection, cited in §6 (p.32: "financial portfolio management
+ * problems in Elsokkary et al. (2017) and Kalra et al. (2018)").
+ *
+ * Binary Markowitz: hold exactly k assets, minimising risk minus return,
+ * `xᵀΣx − μᵀx`. The objective is already quadratic — its diagonal is
+ * `σᵢᵢ − μᵢ` and each pair contributes `2σᵢⱼ` — and the only row is the
+ * cardinality `Σxⱼ = k`, Transformation #1. Risk and return are weighted
+ * equally; the weight is a modelling choice, not data.
+ *
+ * Kochenberger & Ma's own white paper on portfolio QUBOs (2019, in the
+ * bibliography) is not public, so this is the textbook form, not theirs.
+ *
+ * Five assets, hold three. The highest-return trio, assets 2, 4 and 5 (31),
+ * carries too much risk; the optimum is assets 3, 4 and 5, objective −4,
+ * unique. The size row genuinely binds: without it the best holding would be
+ * just assets 3 and 5 (−7). An earlier draft asked for two assets, and that
+ * unconstrained optimum satisfied the row by accident — the case then passed
+ * even at P = 0, which taught nothing about the penalty.
+ *
+ * P is ours. A violated row costs at least P. No assignment scores below
+ * −13 (the sum of the negative diagonal entries; every covariance is
+ * positive), and the first three assets together are feasible at 26, so
+ * `P > 39`; 40.
+ */
+export const portfolio: ExtendedCase = {
+  source: 'mentioned',
+  mention: 'cited',
+  id: 'portfolio',
+  section: '§6',
+  pages: [32, 32],
+  group: 'general',
+  penalty: { paperValue: 40, min: 0, max: 80, step: 1 },
+  editable: false,
+  model: {
+    sense: 'min',
+    numVars: 5,
+    varMeta: decisionVars(5),
+    linear: PORTFOLIO_RETURNS.map((m, i) => PORTFOLIO_COV[i][i] - m),
+    quadratic: PORTFOLIO_COV.flatMap((rowv, i) =>
+      rowv.slice(i + 1).map((s, k) => ({ i, j: i + 1 + k, coef: 2 * s })),
+    ),
+    constraints: [
+      unitRow(5, [0, 1, 2, 3, 4], '=', PORTFOLIO_PICK, 'transform1', `hold exactly ${PORTFOLIO_PICK} assets`),
+    ],
+  },
+};
+
+/** Edge weights on §3.2's graph, in `TUTORIAL_GRAPH.edges` order. */
+export const MATCHING_WEIGHTS = [4, 2, 3, 5, 1, 2];
+
+/**
+ * Maximum Weight Matching, cited in §6 (p.31: Lucas (2014) converts
+ * "matching ... problems" among others into Ising form).
+ *
+ * One variable per EDGE: `x_e = 1` puts edge e in the matching. Every node may
+ * touch at most one chosen edge, `Σ_{e∋v} x_e ≤ 1` — row 1 of the p.10 table
+ * for a node of degree 2, and the general form (row 5) for nodes 3 and 4,
+ * which have three edges each. Transformation #2, no slack.
+ *
+ * §3.2's graph with weights 4, 2, 3, 5, 1, 2 on its six edges. The best
+ * matching is {1–2, 3–4}, weight 9, unique; the triangle 3–4–5 means no
+ * matching can cover all five nodes.
+ *
+ * P is ours. Adding an edge that clashes gains at most the largest weight, 5,
+ * while each clashing pair costs P, so `P > 5`; 6.
+ */
+export const maxMatching: ExtendedCase = {
+  source: 'mentioned',
+  mention: 'cited',
+  id: 'max-matching',
+  section: '§6',
+  pages: [31, 31],
+  group: 'knownPenalty',
+  penalty: { paperValue: 6, min: 0, max: 15, step: 1 },
+  editable: false,
+  graph: TUTORIAL_GRAPH,
+  model: {
+    sense: 'max',
+    numVars: TUTORIAL_GRAPH.edges.length,
+    varMeta: TUTORIAL_GRAPH.edges.map(([a, b], k) => ({
+      name: `x${sub(k + 1)}`,
+      kind: 'decision' as const,
+      origin: `x${sub(a)}${sub(b)}`,
+    })),
+    linear: [...MATCHING_WEIGHTS],
+    quadratic: [],
+    constraints: TUTORIAL_GRAPH.nodes.map((v) =>
+      unitRow(
+        TUTORIAL_GRAPH.edges.length,
+        TUTORIAL_GRAPH.edges.flatMap(([a, b], k) => (a === v || b === v ? [k] : [])),
+        '<=',
+        1,
+        'transform2',
+        `node ${v}: at most one matched edge`,
+      ),
+    ),
+  },
+};
