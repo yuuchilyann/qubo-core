@@ -8,7 +8,7 @@
  */
 
 import type { CatalogCase, Clause, Graph } from '../types';
-import { decisionVars, gridVars, row, unitRow } from './helpers';
+import { decisionVars, gridVars, nonEdges, row, unitRow } from './helpers';
 
 export type CaseEdit =
   | { kind: 'numbers'; numbers: number[] }
@@ -77,6 +77,26 @@ export function applyEdit<C extends CatalogCase>(base: C, edit: CaseEdit): C {
             quadratic: [],
             constraints: edges.map(([a, b], k) =>
               unitRow(n, [a, b], '<=', 1, 'transform2', `edge ${k + 1}`),
+            ),
+          },
+        };
+      }
+      if (base.id === 'max-clique') {
+        // One `xᵢ + xⱼ ≤ 1` per NON-edge: the independent-set rows on the complement.
+        const pos = new Map(edit.graph.nodes.map((id, i) => [id, i]));
+        const missing = nonEdges(edit.graph.nodes, edit.graph.edges);
+        return {
+          ...base,
+          custom: true,
+          graph: edit.graph,
+          model: {
+            ...base.model,
+            numVars: n,
+            varMeta: decisionVars(n),
+            linear: new Array<number>(n).fill(1),
+            quadratic: [],
+            constraints: missing.map(([a, b]) =>
+              unitRow(n, [pos.get(a)!, pos.get(b)!], '<=', 1, 'transform2', `non-edge (${a},${b})`),
             ),
           },
         };

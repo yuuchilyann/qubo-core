@@ -1,7 +1,13 @@
 /** The case catalogue, ordered the way the paper builds its argument. */
 
 import type { CaseGroup, CatalogCase, ExtendedCase, QuboCase } from '../types';
-import { maxIndependentSet } from './extended';
+import {
+  discreteTomography,
+  maxClique,
+  maxDiversity,
+  maxIndependentSet,
+  taskAllocation,
+} from './extended';
 import { helloWorld, maxCut, numberPartitioning } from './natural';
 import { max2Sat, minVertexCover, setPacking } from './knownPenalty';
 import {
@@ -14,6 +20,7 @@ import {
 
 export { TUTORIAL_GRAPH, NUMBERS } from './natural';
 export { COLORING_GRAPH } from './general';
+export { TASK_COMM, TASK_EXEC, TOMOGRAPHY_SUMS } from './extended';
 export { helloWorld };
 
 /**
@@ -41,7 +48,13 @@ export const ALL_CASES: QuboCase[] = [
 ];
 
 /** Problems the paper names without working them; see `cases/extended.ts`. */
-export const EXTENDED_CASES: ExtendedCase[] = [maxIndependentSet];
+export const EXTENDED_CASES: ExtendedCase[] = [
+  maxIndependentSet,
+  maxClique,
+  maxDiversity,
+  discreteTomography,
+  taskAllocation,
+];
 
 /** Everything the site can show: the worked examples, then the extensions. */
 export const CATALOG: CatalogCase[] = [...ALL_CASES, ...EXTENDED_CASES];

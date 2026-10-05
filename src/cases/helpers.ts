@@ -88,3 +88,31 @@ export function clause(a: Literal, b: Literal): Clause {
 export function edges1(pairs: [number, number][]): [number, number][] {
   return pairs.map(([a, b]) => [a - 1, b - 1] as [number, number]);
 }
+
+/**
+ * Row-major `rows × cols` variables carrying only their double-subscript
+ * label — for grid models whose cells are neither colours nor locations.
+ */
+export function labelledGrid(rows: number, cols: number): VarMeta[] {
+  const out: VarMeta[] = [];
+  for (let r = 1; r <= rows; r++) {
+    for (let c = 1; c <= cols; c++) {
+      out.push({ name: `x${sub(out.length + 1)}`, kind: 'decision', origin: `x${sub(r)}${sub(c)}` });
+    }
+  }
+  return out;
+}
+
+/** The pairs of `nodes` NOT joined by an edge, 1-based as printed. */
+export function nonEdges(nodes: number[], edges: [number, number][]): [number, number][] {
+  const has = new Set(edges.map(([a, b]) => `${Math.min(a, b)},${Math.max(a, b)}`));
+  const out: [number, number][] = [];
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = Math.min(nodes[i], nodes[j]);
+      const b = Math.max(nodes[i], nodes[j]);
+      if (!has.has(`${a},${b}`)) out.push([nodes[i], nodes[j]]);
+    }
+  }
+  return out;
+}

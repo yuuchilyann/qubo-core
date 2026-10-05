@@ -95,7 +95,7 @@ npm run verify:emit
 **每一個不需要 token 的 sampler 都會被實際執行**，而不是只跑 `ExactSolver`。理由是
 它們各自產生**不同的程式**：不同的 import、不同的建構式，而 `mock` 那一支還是一個
 包住另一個 sampler 的 composite。產碼器的錯誤正好會藏在這些差異裡。
-十二個案例（十一個論文算例＋一個延伸案例）× 六種 tier／sampler 組合，共 72 支程式。
+十六個案例（十一個論文算例＋五個延伸案例）× 六種 tier／sampler 組合，共 96 支程式。
 延伸案例沒有論文答案，比對的是 `solveConstrained()` 窮舉原始約束模型得到的最優值，
 產出的程式在預期答案的註解裡也是這樣標示來源。
 
