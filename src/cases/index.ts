@@ -2,11 +2,17 @@
 
 import type { CaseGroup, CatalogCase, ExtendedCase, QuboCase } from '../types';
 import {
+  capitalBudgeting,
+  cliquePartitioning,
   discreteTomography,
+  linearOrdering,
   maxClique,
   maxDiversity,
   maxIndependentSet,
+  multipleKnapsack,
+  pMedian,
   taskAllocation,
+  warehouseLocation,
 } from './extended';
 import { helloWorld, maxCut, numberPartitioning } from './natural';
 import { max2Sat, minVertexCover, setPacking } from './knownPenalty';
@@ -20,7 +26,20 @@ import {
 
 export { TUTORIAL_GRAPH, NUMBERS } from './natural';
 export { COLORING_GRAPH } from './general';
-export { TASK_COMM, TASK_EXEC, TOMOGRAPHY_SUMS } from './extended';
+export {
+  BUDGET_ROWS,
+  CLUSTER_WEIGHTS,
+  FACILITY_CUSTOMERS,
+  FACILITY_OPEN_COST,
+  FACILITY_SITES,
+  KNAPSACK_CAPS,
+  KNAPSACK_WEIGHTS,
+  ORDERING_VOTES,
+  PROJECT_VALUES,
+  TASK_COMM,
+  TASK_EXEC,
+  TOMOGRAPHY_SUMS,
+} from './extended';
 export { helloWorld };
 
 /**
@@ -54,6 +73,12 @@ export const EXTENDED_CASES: ExtendedCase[] = [
   maxDiversity,
   discreteTomography,
   taskAllocation,
+  capitalBudgeting,
+  multipleKnapsack,
+  pMedian,
+  warehouseLocation,
+  linearOrdering,
+  cliquePartitioning,
 ];
 
 /** Everything the site can show: the worked examples, then the extensions. */

@@ -9,8 +9,8 @@
  * so that an `anchor` can tie the optimum to a number the paper does print.
  */
 
-import type { ExtendedCase } from '../types';
-import { decisionVars, labelledGrid, nonEdges, unitRow } from './helpers';
+import type { ExtendedCase, VarMeta } from '../types';
+import { decisionVars, labelledGrid, nonEdges, row, sub, unitRow } from './helpers';
 import { NUMBERS, TUTORIAL_GRAPH } from './natural';
 
 /**
@@ -230,6 +230,379 @@ export const taskAllocation: ExtendedCase = {
     ]),
     constraints: TASK_EXEC.map((_, i) =>
       unitRow(6, [i * 2, i * 2 + 1], '=', 1, 'transform1', `task ${i + 1}: exactly one processor`),
+    ),
+  },
+};
+
+// ── batch 2: slack, mixed constraint types, node variables ────────────────
+
+/** §5.5's four projects: linear values, and the resource use per budget period. */
+export const PROJECT_VALUES = [2, 5, 2, 4];
+export const BUDGET_ROWS = [
+  { use: [8, 6, 5, 3], limit: 16 },
+  { use: [3, 7, 4, 6], limit: 13 },
+];
+
+/**
+ * Capital Budgeting, named in the §1 list (p.3) and by §5.5 itself ("project
+ * selection and capital budgeting", p.29): choose projects to maximise total
+ * value while every budget period stays within its limit.
+ *
+ * Linear objective, one `≤` row per period, each closed with a slack variable
+ * and Transformation #1 — §5.5 without the quadratic terms and with a second
+ * period. Period 1 is §5.5's own row (8, 6, 5, 3 ≤ 16) and the values are
+ * §5.5's linear coefficients; period 2 is ours.
+ *
+ * With period 1 alone the best choice would be projects 2, 3, 4 for 11; period
+ * 2 rules that out, and the optimum becomes projects 2 and 4 for 9, unique.
+ *
+ * The slack bounds are the full row ranges (16 and 13), not §5.5's judgement of
+ * 3: the optimum leaves 7 unused in period 1, which a bound of 3 could not
+ * represent. P is ours: an infeasible selection pays at least P and scores at
+ * most 13 (every project), while choosing nothing is feasible and scores 0, so
+ * `P > 13` suffices; 14 is the smallest integer that does.
+ */
+export const capitalBudgeting: ExtendedCase = {
+  source: 'mentioned',
+  id: 'capital-budgeting',
+  section: '§1',
+  pages: [3, 3],
+  group: 'general',
+  penalty: { paperValue: 14, min: 0, max: 30, step: 1 },
+  editable: false,
+  model: {
+    sense: 'max',
+    numVars: 4,
+    varMeta: decisionVars(4),
+    linear: [...PROJECT_VALUES],
+    quadratic: [],
+    constraints: BUDGET_ROWS.map(({ use, limit }, t) =>
+      row([...use], '<=', limit, 'transform1', `period ${t + 1} budget`),
+    ),
+  },
+};
+
+/** Item weights (§5.5's resource row) and the two knapsack capacities. */
+export const KNAPSACK_WEIGHTS = [8, 6, 5, 3];
+export const KNAPSACK_CAPS = [10, 8];
+
+/**
+ * Multiple Knapsack, named in the §1 list (p.3): several knapsacks, each item
+ * packed into at most one of them, every knapsack within its capacity.
+ *
+ * `x_{ik} = 1` puts item i in knapsack k. "At most one knapsack" is
+ * `x_{i1} + x_{i2} ≤ 1`, row 1 of the p.10 table again (Transformation #2, no
+ * slack); each capacity is a `≤` row closed with slack and Transformation #1. So
+ * this one case uses both transformations, like §5.2.
+ *
+ * Items are §5.5's four projects (weights 8, 6, 5, 3; values 2, 5, 2, 4) and the
+ * capacities 10 and 8 are ours. Total weight 22 exceeds the 18 available, so
+ * something must stay out; the best value is 11, reached by four different
+ * packings — that degeneracy is real, not an artefact of the slack bits.
+ *
+ * P is ours, by the same argument as `capitalBudgeting`: nothing packed is
+ * feasible at 0 and no assignment scores above 13, so `P > 13`; 14.
+ */
+export const multipleKnapsack: ExtendedCase = {
+  source: 'mentioned',
+  id: 'multiple-knapsack',
+  section: '§1',
+  pages: [3, 3],
+  group: 'general',
+  penalty: { paperValue: 14, min: 0, max: 30, step: 1 },
+  editable: false,
+  model: {
+    sense: 'max',
+    numVars: 8,
+    varMeta: labelledGrid(4, 2),
+    linear: PROJECT_VALUES.flatMap((v) => [v, v]),
+    quadratic: [],
+    constraints: [
+      ...KNAPSACK_WEIGHTS.map((_, i) =>
+        unitRow(8, [i * 2, i * 2 + 1], '<=', 1, 'transform2', `item ${i + 1}: at most one knapsack`),
+      ),
+      ...KNAPSACK_CAPS.map((cap, k) =>
+        row(
+          KNAPSACK_WEIGHTS.flatMap((w) => (k === 0 ? [w, 0] : [0, w])),
+          '<=',
+          cap,
+          'transform1',
+          `knapsack ${k + 1} capacity`,
+        ),
+      ),
+    ],
+  },
+};
+
+/** Customers and candidate sites as points on a line; distance is |a − b|. */
+export const FACILITY_CUSTOMERS = [0, 2, 7, 10];
+export const FACILITY_SITES = [1, 5, 9];
+/** Opening cost per site, for `warehouseLocation` only. */
+export const FACILITY_OPEN_COST = [4, 1, 6];
+const MEDIAN_P = 2;
+
+const facilityDist = FACILITY_CUSTOMERS.map((c) => FACILITY_SITES.map((s) => Math.abs(c - s)));
+const nCust = FACILITY_CUSTOMERS.length;
+const nSite = FACILITY_SITES.length;
+const nAssign = nCust * nSite;
+
+/**
+ * `x_{ij}` (customer i served by site j), row-major, THEN `y_j` (site j open).
+ *
+ * The order matters: the `implication` recipe takes its two variables in index
+ * order as `antecedent ≤ consequent`, so every `x_{ij}` must precede its `y_j`.
+ * Get it backwards and the constrained-search check fails, which is how such a
+ * slip would surface.
+ */
+function facilityVars(): VarMeta[] {
+  return [
+    ...labelledGrid(nCust, nSite),
+    ...FACILITY_SITES.map((_, j) => ({
+      name: `x${sub(nAssign + j + 1)}`,
+      kind: 'decision' as const,
+      origin: `y${sub(j + 1)}`,
+    })),
+  ];
+}
+
+/** Each customer served exactly once, and only by an open site. */
+function facilityRows() {
+  const n = nAssign + nSite;
+  return [
+    ...FACILITY_CUSTOMERS.map((_, i) =>
+      unitRow(
+        n,
+        FACILITY_SITES.map((_, j) => i * nSite + j),
+        '=',
+        1,
+        'transform1',
+        `customer ${i + 1}: served by exactly one site`,
+      ),
+    ),
+    ...FACILITY_CUSTOMERS.flatMap((_, i) =>
+      FACILITY_SITES.map((_, j) => {
+        const coeffs = new Array<number>(n).fill(0);
+        coeffs[i * nSite + j] = 1;
+        coeffs[nAssign + j] = -1;
+        return row(coeffs, '<=', 0, 'implication', `customer ${i + 1} → site ${j + 1} only if open`);
+      }),
+    ),
+  ];
+}
+
+/**
+ * P-Median, named in the §1 list (p.3): open exactly p sites and serve every
+ * customer from its nearest open one, minimising total distance.
+ *
+ * Three kinds of row in one model: "served exactly once" and "exactly p open"
+ * are Transformation #1; "served only by an open site", `x_{ij} ≤ y_j`, is row 4
+ * of the p.10 table, `P(x_{ij} − x_{ij}y_j)`.
+ *
+ * Four customers at 0, 2, 7, 10 and three sites at 1, 5, 9, p = 2. Opening the
+ * two outer sites wins, total 5, unique.
+ *
+ * P is ours. Distances are non-negative and every violated row costs at least
+ * P, so any P above the cost of SOME feasible plan works; opening sites 1 and 2
+ * costs 9, so `P > 9`; 10.
+ */
+export const pMedian: ExtendedCase = {
+  source: 'mentioned',
+  id: 'p-median',
+  section: '§1',
+  pages: [3, 3],
+  group: 'general',
+  penalty: { paperValue: 10, min: 0, max: 30, step: 1 },
+  editable: false,
+  model: {
+    sense: 'min',
+    numVars: nAssign + nSite,
+    varMeta: facilityVars(),
+    linear: [...facilityDist.flat(), ...new Array<number>(nSite).fill(0)],
+    quadratic: [],
+    constraints: [
+      ...facilityRows(),
+      unitRow(
+        nAssign + nSite,
+        FACILITY_SITES.map((_, j) => nAssign + j),
+        '=',
+        MEDIAN_P,
+        'transform1',
+        `open exactly ${MEDIAN_P} sites`,
+      ),
+    ],
+  },
+};
+
+/**
+ * Warehouse Location (uncapacitated facility location), named in the §1 list
+ * (p.4): like P-Median, but each site has an opening cost and there is no
+ * fixed number to open — the model decides how many.
+ *
+ * Same customers, sites and rows as `pMedian`, minus the cardinality row, plus
+ * the opening costs 4, 1, 6 on the `y` variables. The cheap middle site now
+ * changes the answer: open sites 1 and 2, total 14, unique — where P-Median on
+ * the same points opened sites 1 and 3.
+ *
+ * P is ours, by the same argument: opening every site is feasible at 16, so
+ * `P > 16`; 17.
+ */
+export const warehouseLocation: ExtendedCase = {
+  source: 'mentioned',
+  id: 'warehouse-location',
+  section: '§1',
+  pages: [4, 4],
+  group: 'general',
+  penalty: { paperValue: 17, min: 0, max: 40, step: 1 },
+  editable: false,
+  model: {
+    sense: 'min',
+    numVars: nAssign + nSite,
+    varMeta: facilityVars(),
+    linear: [...facilityDist.flat(), ...FACILITY_OPEN_COST],
+    quadratic: [],
+    constraints: facilityRows(),
+  },
+};
+
+/**
+ * Pairwise preferences among four items: `ORDERING_VOTES[i][j]` of five voters
+ * rank item i+1 above item j+1, so each pair sums to 5.
+ */
+export const ORDERING_VOTES = [
+  [0, 4, 4, 1],
+  [1, 0, 4, 3],
+  [1, 1, 0, 2],
+  [4, 2, 3, 0],
+];
+const ORDER_PAIRS: [number, number][] = [
+  [0, 1],
+  [0, 2],
+  [0, 3],
+  [1, 2],
+  [1, 3],
+  [2, 3],
+];
+const pairIndex = (i: number, j: number) => ORDER_PAIRS.findIndex(([a, b]) => a === i && b === j);
+
+/**
+ * Linear Ordering, named in the §1 list (p.4): rank items so that as many
+ * pairwise preferences as possible agree with the ranking.
+ *
+ * One variable per pair `i < j`: `x_{ij} = 1` puts i ahead of j. A ranking is a
+ * set of such choices with no cycle, which for every triple `i < j < k` is
+ * `0 ≤ x_{ij} + x_{jk} − x_{ik} ≤ 1` — two rows, each closed with slack.
+ *
+ * Each slack bound is 1, below the row's full range of 2. That is a judgement
+ * in exactly the sense of §5.3 (p.25): whenever the OTHER row of the pair holds,
+ * this row's slack cannot exceed 1, so a larger bound would only add bits. The
+ * constrained search, which knows nothing of slack, confirms the judgement
+ * loses no feasible ranking.
+ *
+ * The objective counts NET agreement, `Σ (w_{ij} − w_{ji}) x_{ij}`. The full
+ * agreement count adds the constant `Σ_{i<j} w_{ji} = 12`, which a constrained
+ * model has no place for; the problem view adds it back. The majorities are
+ * cyclic (1 over 2, 2 over 4, 4 over 1), so transitivity binds; the best
+ * ranking is 4, 1, 2, 3 with net 9 (agreement 21 of 30), unique.
+ *
+ * P is ours. No assignment scores above 10 (all positive nets) and the plain
+ * order 1, 2, 3, 4 is feasible at 6, so `P > 4`; 5.
+ */
+export const linearOrdering: ExtendedCase = {
+  source: 'mentioned',
+  id: 'linear-ordering',
+  section: '§1',
+  pages: [4, 4],
+  group: 'general',
+  penalty: { paperValue: 5, min: 0, max: 20, step: 1 },
+  editable: false,
+  model: {
+    sense: 'max',
+    numVars: ORDER_PAIRS.length,
+    varMeta: ORDER_PAIRS.map(([i, j], k) => ({
+      name: `x${sub(k + 1)}`,
+      kind: 'decision' as const,
+      origin: `x${sub(i + 1)}${sub(j + 1)}`,
+    })),
+    linear: ORDER_PAIRS.map(([i, j]) => ORDERING_VOTES[i][j] - ORDERING_VOTES[j][i]),
+    quadratic: [],
+    constraints: [
+      [0, 1, 2],
+      [0, 1, 3],
+      [0, 2, 3],
+      [1, 2, 3],
+    ].flatMap(([i, j, k]) => {
+      const coeffs = new Array<number>(ORDER_PAIRS.length).fill(0);
+      coeffs[pairIndex(i, j)] = 1;
+      coeffs[pairIndex(j, k)] = 1;
+      coeffs[pairIndex(i, k)] = -1;
+      const t = `${i + 1},${j + 1},${k + 1}`;
+      return [
+        row([...coeffs], '<=', 1, 'transform1', `triple (${t}): no cycle, upper`, 1),
+        row([...coeffs], '>=', 0, 'transform1', `triple (${t}): no cycle, lower`, 1),
+      ];
+    }),
+  },
+};
+
+/** Signed similarity between four nodes; positive wants them together. */
+export const CLUSTER_WEIGHTS: { i: number; j: number; w: number }[] = [
+  { i: 0, j: 1, w: 4 },
+  { i: 0, j: 2, w: -2 },
+  { i: 0, j: 3, w: -3 },
+  { i: 1, j: 2, w: 2 },
+  { i: 1, j: 3, w: -1 },
+  { i: 2, j: 3, w: 3 },
+];
+const CLUSTER_NODES = 4;
+
+/**
+ * Clique Partitioning, named in the §1 list (p.4) and the one problem §7
+ * (point 3, p.36) uses to motivate replacing edge variables by node variables.
+ *
+ * Split the nodes into any number of groups, maximising the total weight of the
+ * pairs that share a group. The standard model has one variable per EDGE; §7's
+ * substitution replaces "i and j together" with `Σ_k x_{ik}x_{jk}`, where
+ * `x_{ik} = 1` puts node i in group k. The objective becomes quadratic and the
+ * only rows are "each node in exactly one group", Transformation #1.
+ *
+ * Four groups for four nodes, so no partition is excluded. The best is
+ * {1, 2} {3, 4}, total 7; it appears as 12 optima because the group labels are
+ * interchangeable (4 × 3 ways to name two groups) — a symmetry worth seeing.
+ *
+ * P is ours. Leaving a node out gains at most its negative weights; putting it
+ * in m groups gains at most (m − 1) times its positive weights while costing
+ * P(m − 1)². Either way P above the node's total |weight| suffices; the
+ * largest is 9 (node 1), so 10.
+ */
+export const cliquePartitioning: ExtendedCase = {
+  source: 'mentioned',
+  id: 'clique-partitioning',
+  section: '§1',
+  pages: [4, 4],
+  group: 'general',
+  penalty: { paperValue: 10, min: 0, max: 30, step: 1 },
+  editable: false,
+  model: {
+    sense: 'max',
+    numVars: CLUSTER_NODES * CLUSTER_NODES,
+    varMeta: labelledGrid(CLUSTER_NODES, CLUSTER_NODES),
+    linear: new Array<number>(CLUSTER_NODES * CLUSTER_NODES).fill(0),
+    quadratic: CLUSTER_WEIGHTS.flatMap(({ i, j, w }) =>
+      Array.from({ length: CLUSTER_NODES }, (_, k) => ({
+        i: i * CLUSTER_NODES + k,
+        j: j * CLUSTER_NODES + k,
+        coef: w,
+      })),
+    ),
+    constraints: Array.from({ length: CLUSTER_NODES }, (_, i) =>
+      unitRow(
+        CLUSTER_NODES * CLUSTER_NODES,
+        Array.from({ length: CLUSTER_NODES }, (_, k) => i * CLUSTER_NODES + k),
+        '=',
+        1,
+        'transform1',
+        `node ${i + 1}: exactly one group`,
+      ),
     ),
   },
 };

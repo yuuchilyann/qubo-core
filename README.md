@@ -89,7 +89,7 @@ npm run verify:all
 | `v0.3.0` | 產碼器泛化：`EmitContext` + `emitTier1For` / `emitTier2For`；`toPythonModel` 改吃模型 |
 | `v0.4.0` | `MockDWaveSampler`（真實 minor-embedding，不需 token）；`verify:emit` 從 22 支程式擴充到 66 支。`SamplerLimitKey` 新增 `sampler.limit.mock`，升版的消費端要補這個字典項目 |
 | `v0.5.0` | **延伸案例**：論文只點名、沒有算例的問題（`ExtendedCase`，首例 Max Independent Set）。新增 `solveConstrained()`（不經 QUBO、直接窮舉原始約束模型），十一個論文案例也多一道這個檢查。`ALL_CASES` 維持只收論文算例；全目錄改用 `CATALOG`，`findCase` / `casesInGroup` 回傳 `CatalogCase`，消費端要先以 `source` 收窄才能讀 `paperQ` |
-| `v0.6.0` | 延伸案例第一批：Max Clique、Max Diversity、Discrete Tomography、Task Allocation（皆不需改引擎）。新增 helper `labelledGrid`、`nonEdges`；Max Clique 可自訂圖 |
+| `v0.6.0` | 延伸案例增加到十一個，皆不需改引擎：Max Clique（可自訂圖）、Max Diversity、Discrete Tomography、Task Allocation、Capital Budgeting、Multiple Knapsack、P-Median、Warehouse Location、Linear Ordering、Clique Partitioning。新增 helper `labelledGrid`、`nonEdges` 與各案例的資料常數匯出 |
 
 沒有 build 步驟：原始碼以 TypeScript 出貨，因為消費端都是 bundler 環境，
 而且這樣驗證腳本檢查的就是前端實際載入的那些模組，不是它們的編譯副本。
