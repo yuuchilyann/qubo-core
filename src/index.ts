@@ -13,6 +13,7 @@ export * from './types';
 export * from './qubo';
 export * from './derive';
 export * from './constrained';
+export * from './reduce';
 export * from './samplers/bruteForce';
 export * from './samplers/tabu';
 export * from './python/emit';

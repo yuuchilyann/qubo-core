@@ -22,7 +22,7 @@ export type PyModel = {
     method: string;
     slack_bound?: number;
   }[];
-  clauses?: [[number, boolean], [number, boolean]][];
+  clauses?: [number, boolean][][];
   cut_edges?: [number, number][];
 };
 
@@ -46,13 +46,7 @@ export function toPythonModel(m: ConstrainedModel): PyModel {
     })),
   };
   if (m.clauses) {
-    out.clauses = m.clauses.map(
-      ([a, b]) =>
-        [
-          [a.v, a.negated],
-          [b.v, b.negated],
-        ] as [[number, boolean], [number, boolean]],
-    );
+    out.clauses = m.clauses.map((clause) => clause.map((l) => [l.v, l.negated] as [number, boolean]));
   }
   if (m.cutEdges) out.cut_edges = m.cutEdges.map(([i, j]) => [i, j] as [number, number]);
   return out;

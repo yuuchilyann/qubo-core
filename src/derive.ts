@@ -17,10 +17,11 @@ import type {
   VarMeta,
 } from './types';
 import { QuboBuilder, autoSlackBound, slackWeights } from './qubo';
+import { clausePolynomial, reduceHigherOrder, type AuxVar, type Term } from './reduce';
 
 /** A single line of the formulation trace shown in the UI. */
 export type DerivationStep = {
-  kind: 'objective' | 'slack' | 'penalty';
+  kind: 'objective' | 'slack' | 'penalty' | 'reduction';
   /** Penalty recipe used, for the localised heading. */
   method?: Constraint['method'];
   /** Index into `model.constraints`, when applicable. */
@@ -34,6 +35,12 @@ export type Derivation = {
   steps: DerivationStep[];
   /** Slack bounds actually used, alongside the widest bound implied by the row. */
   slackInfo: { constraintIndex: number; used: number; auto: number; weights: number[] }[];
+  /**
+   * Auxiliary variables from the higher-order reduction, each with its `load`
+   * (Σ|coef| of the terms it substituted). The reduction is exact at every
+   * optimum when P exceeds the largest load; at P equal to it, ties appear.
+   */
+  auxInfo: AuxVar[];
 };
 
 const SUB = '₀₁₂₃₄₅₆₇₈₉';
@@ -118,30 +125,16 @@ function expandSlack(model: ConstrainedModel): {
   return { varMeta, rows, slackInfo };
 }
 
-/** Indicator that a literal is FALSE — the factor a clause penalty is built from. */
-function falseFactor(l: Literal): { constant: number; linear: number } {
-  // `x_v` false ⇒ (1 − x_v);  `¬x_v` false ⇒ x_v.
-  return l.negated ? { constant: 0, linear: 1 } : { constant: 1, linear: -1 };
-}
-
-/**
- * A two-literal clause is violated exactly when BOTH literals are false, so its
- * penalty is the product of the two "is false" indicators. Expanding that
- * product reproduces all three rows of the p.15 table without special-casing.
- */
-function addClausePenalty(b: QuboBuilder, clause: Clause, P: number) {
-  const [l1, l2] = clause;
-  const f1 = falseFactor(l1);
-  const f2 = falseFactor(l2);
-  b.addConstant(P * f1.constant * f2.constant);
-  b.addLinear(l1.v, P * f1.linear * f2.constant);
-  b.addLinear(l2.v, P * f2.linear * f1.constant);
-  b.addQuadratic(l1.v, l2.v, P * f1.linear * f2.linear);
-}
-
 function clauseLatex(clause: Clause, names: string[]): string {
   const lit = (l: Literal) => (l.negated ? `\\bar{${names[l.v]}}` : names[l.v]);
-  return `(${lit(clause[0])} \\vee ${lit(clause[1])})`;
+  return `(${clause.map(lit).join(' \\vee ')})`;
+}
+
+/** Add one monomial of degree ≤ 2 to the builder. */
+function addTerm(b: QuboBuilder, t: Term) {
+  if (t.vars.length === 0) b.addConstant(t.coef);
+  else if (t.vars.length === 1) b.addLinear(t.vars[0], t.coef);
+  else b.addQuadratic(t.vars[0], t.vars[1], t.coef);
 }
 
 /**
@@ -168,6 +161,38 @@ export function deriveModel(model: ConstrainedModel, P = 1): Derivation {
   const sign = model.sense === 'min' ? 1 : -1;
 
   const { varMeta, rows, slackInfo } = expandSlack(model);
+
+  // Clause penalties are expanded BEFORE the builder exists: terms of degree
+  // three or more need auxiliary variables, and Q's size has to include them.
+  // Summing every clause first also lets cubic terms cancel before anything is
+  // substituted — a not-all-equal pair of clauses is quadratic in total.
+  const clauseLow: { k: number; terms: Term[] }[] = [];
+  const high = new Map<string, Term>();
+  (model.clauses ?? []).forEach((clause, k) => {
+    const low: Term[] = [];
+    for (const t of clausePolynomial(clause)) {
+      if (t.vars.length <= 2) {
+        low.push(t);
+        continue;
+      }
+      const key = t.vars.join(',');
+      const prev = high.get(key);
+      if (prev) prev.coef += t.coef;
+      else high.set(key, { vars: [...t.vars], coef: t.coef });
+    }
+    clauseLow.push({ k, terms: low });
+  });
+  const reduction = reduceHigherOrder(
+    [...high.values()].filter((t) => t.coef !== 0),
+    varMeta.length,
+  );
+  for (const y of reduction.aux) {
+    varMeta.push({ name: `x${sub(y.index + 1)}`, kind: 'aux', auxOf: [y.a, y.b] });
+  }
+  rows.forEach((row) => {
+    while (row.length < varMeta.length) row.push(0);
+  });
+
   const names = varMeta.map((m) => m.name);
   const b = new QuboBuilder(varMeta.length);
   const steps: DerivationStep[] = [];
@@ -204,15 +229,38 @@ export function deriveModel(model: ConstrainedModel, P = 1): Derivation {
     });
   }
 
-  // ── Max-2-SAT clauses ────────────────────────────────────────────────────
-  if (model.clauses) {
-    model.clauses.forEach((clause, k) => {
-      b.enter(`clause:${k}`, clauseLatex(clause, names));
-      addClausePenalty(b, clause, P);
+  // ── clauses ──────────────────────────────────────────────────────────────
+  // Each violated clause counts 1: the clauses ARE the objective, so P never
+  // scales them. (Every catalogued 2-SAT model is derived at P = 1, so §4.3's
+  // Q is unchanged.)
+  for (const { k, terms } of clauseLow) {
+    const clause = model.clauses![k];
+    b.enter(`clause:${k}`, clauseLatex(clause, names));
+    for (const t of terms) addTerm(b, t);
+    steps.push({
+      kind: 'penalty',
+      constraintIndex: k,
+      latex: `${clauseLatex(clause, names)} \\;\\longrightarrow\\; ${clausePenaltyLatex(clause, names)}`,
+    });
+  }
+
+  // ── higher-order reduction (§7 point 4) ──────────────────────────────────
+  // Rosenberg: `x_a x_b → y` plus `P(x_a x_b − 2x_a y − 2x_b y + 3y)`, which is
+  // zero exactly when `y = x_a x_b` and at least P otherwise.
+  if (reduction.aux.length) {
+    b.enter('reduction', 'higher-order terms after substitution');
+    for (const t of reduction.terms) addTerm(b, t);
+    const Pk = sign * P;
+    reduction.aux.forEach((y, j) => {
+      const [a, c, v] = [names[y.a], names[y.b], names[y.index]];
+      b.enter(`reduction:${j}`, `${a}${c} → ${v}`);
+      b.addQuadratic(y.a, y.b, Pk);
+      b.addQuadratic(y.a, y.index, -2 * Pk);
+      b.addQuadratic(y.b, y.index, -2 * Pk);
+      b.addLinear(y.index, 3 * Pk);
       steps.push({
-        kind: 'penalty',
-        constraintIndex: k,
-        latex: `${clauseLatex(clause, names)} \\;\\longrightarrow\\; ${clausePenaltyLatex(clause, names)}`,
+        kind: 'reduction',
+        latex: `${a}${c} \\to ${v}: \\quad ${sign > 0 ? '+' : '-'}P\\left(${a}${c} - 2${a}${v} - 2${c}${v} + 3${v}\\right)`,
       });
     });
   }
@@ -335,10 +383,16 @@ export function deriveModel(model: ConstrainedModel, P = 1): Derivation {
     }
   });
 
-  return { model: b.build(model.sense, varMeta, P), steps, slackInfo };
+  return { model: b.build(model.sense, varMeta, P), steps, slackInfo, auxInfo: reduction.aux };
 }
 
 function clausePenaltyLatex(clause: Clause, names: string[]): string {
+  if (clause.length !== 2) {
+    // Longer clauses: the product of "is false" factors, left unexpanded.
+    return clause
+      .map((l) => (l.negated ? names[l.v] : `\\left(1 - ${names[l.v]}\\right)`))
+      .join('');
+  }
   const [l1, l2] = clause;
   const a = names[l1.v];
   const c = names[l2.v];
@@ -369,10 +423,9 @@ export function checkFeasibility(
 /** Count of clauses left unsatisfied (§4.3's objective, stated positively). */
 export function unsatisfiedClauses(clauses: Clause[], x: number[] | Uint8Array): number {
   let count = 0;
-  for (const [l1, l2] of clauses) {
-    const v1 = l1.negated ? !x[l1.v] : !!x[l1.v];
-    const v2 = l2.negated ? !x[l2.v] : !!x[l2.v];
-    if (!v1 && !v2) count++;
+  for (const clause of clauses) {
+    // Violated exactly when every literal is false.
+    if (clause.every((l) => (l.negated ? !!x[l.v] : !x[l.v]))) count++;
   }
   return count;
 }

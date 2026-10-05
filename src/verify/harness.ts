@@ -173,9 +173,26 @@ export function verifyExtended(qcase: ExtendedCase): CaseReport {
         : `${result.best.length} optimum/optima, ${infeasible.length} infeasible`,
   });
 
+  // C′ — the higher-order reduction is exact at the optimum: every auxiliary
+  // variable equals the product it stands for (§7 point 4).
+  const auxVars = model.varMeta
+    .map((m, i) => ({ i, of: m.auxOf }))
+    .filter((v): v is { i: number; of: [number, number] } => v.of !== undefined);
+  if (auxVars.length) {
+    const wrong = result.best.filter((b) =>
+      auxVars.some(({ i, of: [a, c] }) => b.x[i] !== b.x[a] * b.x[c]),
+    );
+    checks.push({
+      name: 'every auxiliary variable equals its product at the optimum',
+      ok: result.degeneracy <= keep && wrong.length === 0,
+      detail: `${auxVars.length} aux, ${wrong.length} of ${result.best.length} optima inconsistent`,
+    });
+  }
+
   // D — same number of optima. Only meaningful without slack, where QUBO
-  // assignments and original assignments correspond one to one.
-  if (model.n === qcase.model.numVars) {
+  // assignments and original assignments correspond one to one; aux variables
+  // keep that correspondence, since C′ pins each one to its product.
+  if (!model.varMeta.some((m) => m.kind === 'slack')) {
     checks.push({
       name: 'QUBO degeneracy == constrained degeneracy',
       ok: result.degeneracy === direct.argmins.length,

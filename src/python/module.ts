@@ -2,9 +2,10 @@
  * `FUNCTION_MODULE` — the reusable Python that builds Q from a constrained
  * model, rather than carrying a pre-computed Q as a literal.
  *
- * ⚠️ **SYNC CONSTRAINT.** This is a line-by-line port of `src/lib/derive.ts`
- * (`derive` / `expandSlack` / `addClausePenalty`) and `src/lib/qubo.ts`
- * (`QuboBuilder.addSquaredLinear` / `slackWeights` / `autoSlackBound`).
+ * ⚠️ **SYNC CONSTRAINT.** This is a line-by-line port of `src/derive.ts`
+ * (`deriveModel` / `expandSlack`), `src/reduce.ts` (`clausePolynomial` /
+ * `reduceHigherOrder`) and `src/qubo.ts` (`QuboBuilder.addSquaredLinear` /
+ * `slackWeights` / `autoSlackBound`).
  * Changing the derivation on the TypeScript side REQUIRES updating this string.
  *
  * `npm run verify:python` guards the invariant: it executes this module under
@@ -44,6 +45,59 @@ def _auto_slack_bound(coeffs, rel, rhs):
     return max(0, bound)
 
 
+def _clause_polynomial(clause):
+    """Expand a clause's penalty, the product of its "is false" indicators.
+
+    x_v is false <=> (1 - x_v);  ~x_v is false <=> x_v.  Variables are
+    idempotent (x*x = x), so a repeated variable merges, and x_v OR ~x_v
+    cancels to nothing. Returns [(vars, coef)] with vars sorted ascending.
+    Port of clausePolynomial() in src/reduce.ts; insertion order matters.
+    """
+    poly = {(): 1}
+    for v, negated in clause:
+        constant, linear = (0, 1) if negated else (1, -1)
+        nxt = {}
+        for vars_, coef in poly.items():
+            merged = vars_ if v in vars_ else tuple(sorted(vars_ + (v,)))
+            for key, c in ((vars_, coef * constant), (merged, coef * linear)):
+                if c == 0:
+                    continue
+                nxt[key] = nxt.get(key, 0) + c
+        poly = nxt
+    return [(list(k), c) for k, c in poly.items() if c != 0]
+
+
+def _reduce_higher_order(terms, first_aux):
+    """Rosenberg's reduction (§7 point 4): bring every term to degree <= 2.
+
+    Terms are taken first-in first-out; in each, the two LOWEST variable
+    indices a, b are replaced by an auxiliary y = x_a * x_b (reused if that
+    pair was substituted before). Returns (terms, aux) with aux entries
+    [index, a, b, load]. Port of reduceHigherOrder() in src/reduce.ts.
+    """
+    aux = []
+    by_pair = {}
+    out = {}
+    queue = [(list(v), c) for v, c in terms]
+    while queue:
+        vars_, coef = queue.pop(0)
+        if coef == 0:
+            continue
+        if len(vars_) <= 2:
+            key = tuple(vars_)
+            out[key] = out.get(key, 0) + coef
+            continue
+        a, b, rest = vars_[0], vars_[1], vars_[2:]
+        y = by_pair.get((a, b))
+        if y is None:
+            y = [first_aux + len(aux), a, b, 0]
+            aux.append(y)
+            by_pair[(a, b)] = y
+        y[3] += abs(coef)
+        queue.append((sorted(rest + [y[0]]), coef))
+    return [(list(k), c) for k, c in out.items() if c != 0], aux
+
+
 def build_qubo(model, P=1):
     """Recast a constrained 0/1 model into QUBO form.
 
@@ -53,7 +107,7 @@ def build_qubo(model, P=1):
         linear      [c_j]                        objective linear coefficients
         quadratic   [[i, j, coef], ...]          objective quadratic terms, i < j
         constraints [{coeffs, rel, rhs, method, slack_bound}]
-        clauses     [[[v, negated], [v, negated]], ...]   (Max 2-SAT only)
+        clauses     [[[v, negated], ...], ...]   objective = number of violated clauses
         cut_edges   [[i, j], ...]                          (Max-Cut only)
 
     Returns (Q, constant, n) where Q is the FULL SYMMETRIC matrix, so a
@@ -80,6 +134,28 @@ def build_qubo(model, P=1):
             for r, rowk in enumerate(rows):
                 rowk.append(s * w if r == k else 0)
             n += 1
+    for rowk in rows:
+        while len(rowk) < n:
+            rowk.append(0)
+
+    # ---- clauses: expand first, then reduce degree >= 3 -------------------
+    # Done before Q exists because auxiliary variables enlarge it, and after
+    # summing every clause so that cubic terms can cancel before substitution.
+    clause_low = []
+    high = {}
+    for cl in model.get("clauses", []) or []:
+        low = []
+        for vars_, coef in _clause_polynomial(cl):
+            if len(vars_) <= 2:
+                low.append((vars_, coef))
+            else:
+                key = tuple(vars_)
+                high[key] = high.get(key, 0) + coef
+        clause_low.append(low)
+    reduced, aux = _reduce_higher_order(
+        [(list(k), c) for k, c in high.items() if c != 0], n
+    )
+    n += len(aux)
     for rowk in rows:
         while len(rowk) < n:
             rowk.append(0)
@@ -135,20 +211,34 @@ def build_qubo(model, P=1):
         for i, j, coef in model.get("quadratic", []) or []:
             add_quadratic(i, j, coef)
 
-    # ---- Max 2-SAT clauses ----------------------------------------------
-    # A clause is violated exactly when BOTH literals are false, so its penalty
-    # is the product of the two "is false" indicators:
-    #     x_v  is false  <=>  (1 - x_v)
-    #     ~x_v is false  <=>  x_v
-    # Expanding that product reproduces all three rows of the p.15 table.
-    for cl in model.get("clauses", []) or []:
-        (v1, neg1), (v2, neg2) = cl
-        f1c, f1l = (0, 1) if neg1 else (1, -1)
-        f2c, f2l = (0, 1) if neg2 else (1, -1)
-        state["constant"] += P * f1c * f2c
-        add_linear(v1, P * f1l * f2c)
-        add_linear(v2, P * f2l * f1c)
-        add_quadratic(v1, v2, P * f1l * f2l)
+    def add_term(vars_, c):
+        if len(vars_) == 0:
+            state["constant"] += c
+        elif len(vars_) == 1:
+            add_linear(vars_[0], c)
+        else:
+            add_quadratic(vars_[0], vars_[1], c)
+
+    # ---- clauses ---------------------------------------------------------
+    # Each violated clause counts 1 -- the clauses ARE the objective, so P
+    # never scales them. For two literals the expansion reproduces all three
+    # rows of the p.15 table.
+    for low in clause_low:
+        for vars_, c in low:
+            add_term(vars_, c)
+
+    # ---- higher-order reduction (§7 point 4) -----------------------------
+    # x_a x_b -> y, plus P(x_a x_b - 2 x_a y - 2 x_b y + 3y): zero exactly
+    # when y = x_a x_b, at least P otherwise.
+    if aux:
+        for vars_, c in reduced:
+            add_term(vars_, c)
+        pk = sign * P
+        for idx, a, b, _load in aux:
+            add_quadratic(a, b, pk)
+            add_quadratic(a, idx, -2 * pk)
+            add_quadratic(b, idx, -2 * pk)
+            add_linear(idx, 3 * pk)
 
     # ---- constraint penalties -------------------------------------------
     for k, c in enumerate(constraints):

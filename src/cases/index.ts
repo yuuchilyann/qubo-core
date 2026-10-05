@@ -4,11 +4,13 @@ import type { CaseGroup, CatalogCase, ExtendedCase, QuboCase } from '../types';
 import {
   capitalBudgeting,
   cliquePartitioning,
+  constraintSatisfaction,
   discreteTomography,
   linearOrdering,
   maxClique,
   maxDiversity,
   maxIndependentSet,
+  max3Sat,
   multipleKnapsack,
   pMedian,
   taskAllocation,
@@ -34,8 +36,10 @@ export {
   FACILITY_SITES,
   KNAPSACK_CAPS,
   KNAPSACK_WEIGHTS,
+  NAE_TRIPLES,
   ORDERING_VOTES,
   PROJECT_VALUES,
+  SAT3_CLAUSES,
   TASK_COMM,
   TASK_EXEC,
   TOMOGRAPHY_SUMS,
@@ -79,6 +83,8 @@ export const EXTENDED_CASES: ExtendedCase[] = [
   warehouseLocation,
   linearOrdering,
   cliquePartitioning,
+  max3Sat,
+  constraintSatisfaction,
 ];
 
 /** Everything the site can show: the worked examples, then the extensions. */

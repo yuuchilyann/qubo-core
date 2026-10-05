@@ -55,7 +55,8 @@ Q = to_qubo_dict(Q_sym)
 `src/python/module.ts` 的 `FUNCTION_MODULE` 是一段以 `String.raw` 內嵌的 Python，
 它是下列 TypeScript 的**逐行移植**：
 
-- `src/derive.ts` — `derive` / `expandSlack` / `addClausePenalty`
+- `src/derive.ts` — `deriveModel` / `expandSlack`
+- `src/reduce.ts` — `clausePolynomial` / `reduceHigherOrder`（連處理順序都要一致）
 - `src/qubo.ts` — `QuboBuilder.addSquaredLinear` / `slackWeights` / `autoSlackBound`
 
 **改動 TypeScript 端的推導時，必須同步更新這段 Python**，否則第二層會與 app 說不同的話。
@@ -95,7 +96,7 @@ npm run verify:emit
 **每一個不需要 token 的 sampler 都會被實際執行**，而不是只跑 `ExactSolver`。理由是
 它們各自產生**不同的程式**：不同的 import、不同的建構式，而 `mock` 那一支還是一個
 包住另一個 sampler 的 composite。產碼器的錯誤正好會藏在這些差異裡。
-二十二個案例（十一個論文算例＋十一個延伸案例）× 六種 tier／sampler 組合，共 132 支程式。
+二十四個案例（十一個論文算例＋十三個延伸案例）× 六種 tier／sampler 組合，共 144 支程式。
 延伸案例沒有論文答案，比對的是 `solveConstrained()` 窮舉原始約束模型得到的最優值，
 產出的程式在預期答案的註解裡也是這樣標示來源。
 

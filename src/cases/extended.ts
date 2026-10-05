@@ -9,8 +9,8 @@
  * so that an `anchor` can tie the optimum to a number the paper does print.
  */
 
-import type { ExtendedCase, VarMeta } from '../types';
-import { decisionVars, labelledGrid, nonEdges, row, sub, unitRow } from './helpers';
+import type { Clause, ExtendedCase, VarMeta } from '../types';
+import { decisionVars, labelledGrid, neg, nonEdges, pos, row, sub, unitRow } from './helpers';
 import { NUMBERS, TUTORIAL_GRAPH } from './natural';
 
 /**
@@ -604,5 +604,104 @@ export const cliquePartitioning: ExtendedCase = {
         `node ${i + 1}: exactly one group`,
       ),
     ),
+  },
+};
+
+// ── batch 3: clauses of three literals, and the higher-order reduction ─────
+
+/**
+ * Max 3-SAT, from "SAT problems" in the §1 list (p.4): satisfy as many
+ * three-literal clauses as possible.
+ *
+ * §4.3's construction carries over unchanged — a clause's penalty is the
+ * product of its "is false" indicators — but with three literals that product
+ * is CUBIC. Summed over the eight clauses, two cubic terms survive, `−x₁x₂x₃`
+ * and `−x₁x₂x₄`. Both contain `x₁x₂`, so §7 point 4's Rosenberg reduction
+ * replaces that one product by a single auxiliary `x₅` with the penalty
+ * `P(x₁x₂ − 2x₁x₅ − 2x₂x₅ + 3x₅)`, and the QUBO is 5×5.
+ *
+ * The formula has exactly one satisfying assignment, `x₁ = 1` and the rest 0,
+ * so the optimum is 0 unsatisfied clauses, unique.
+ *
+ * P is ours and is the REDUCTION penalty — the clauses are the objective and
+ * never scale with it. If `x₅ ≠ x₁x₂`, the two substituted terms are off by at
+ * most 1 + 1 = 2, so `P > 2` keeps the optimum exact; 3.
+ */
+export const SAT3_CLAUSES: Clause[] = [
+  [pos(2), neg(3), pos(4)],
+  [neg(1), neg(3), neg(4)],
+  [neg(2), neg(3), pos(4)],
+  [pos(2), pos(3), neg(4)],
+  [pos(1), pos(3), pos(4)],
+  [neg(1), neg(2), pos(3)],
+  [pos(2), neg(3), neg(4)],
+  [pos(1), neg(2), neg(4)],
+];
+
+export const max3Sat: ExtendedCase = {
+  source: 'mentioned',
+  id: 'max-3-sat',
+  section: '§1',
+  pages: [4, 4],
+  group: 'knownPenalty',
+  penalty: { paperValue: 3, min: 0, max: 8, step: 1 },
+  editable: false,
+  model: {
+    sense: 'min', // minimise the number of UNSATISFIED clauses
+    numVars: 4,
+    varMeta: decisionVars(4),
+    linear: [0, 0, 0, 0],
+    quadratic: [],
+    constraints: [],
+    clauses: SAT3_CLAUSES,
+  },
+};
+
+/** Six people, and the trios that must each be split across the two teams. */
+export const NAE_TRIPLES: [number, number, number][] = [
+  [1, 2, 3],
+  [1, 2, 4],
+  [1, 5, 6],
+  [2, 5, 6],
+  [3, 4, 5],
+  [3, 4, 6],
+];
+
+/**
+ * A Constraint Satisfaction Problem, named in the §1 list (p.4): split six
+ * people into two teams so that no listed trio ends up entirely on one team —
+ * "not all equal", also known as set splitting or hypergraph 2-colouring.
+ *
+ * A not-all-equal constraint on `(a, b, c)` is two clauses, `(a ∨ b ∨ c)` and
+ * `(¬a ∨ ¬b ∨ ¬c)`; a monochromatic trio violates exactly one of them, so the
+ * objective counts violated trios. Each clause alone is cubic, but the pair's
+ * cubic terms are `−xₐx_bx_c` and `+xₐx_bx_c`: they CANCEL, and the constraint
+ * is quadratic in total — `1 − a − b − c + ab + ac + bc`. Because `derive()`
+ * sums every clause before reducing, no auxiliary variable is created. The
+ * contrast with `max3Sat` is the point.
+ *
+ * Eight team assignments satisfy every trio (four, up to swapping the team
+ * names), so the optimum 0 appears with degeneracy 8. No penalty is needed:
+ * there are no constraints and nothing to reduce.
+ */
+export const constraintSatisfaction: ExtendedCase = {
+  source: 'mentioned',
+  id: 'constraint-satisfaction',
+  section: '§1',
+  pages: [4, 4],
+  group: 'knownPenalty',
+  penalty: null,
+  editable: false,
+  model: {
+    sense: 'min', // minimise the number of violated clauses = monochromatic trios
+    numVars: 6,
+    varMeta: decisionVars(6),
+    linear: new Array<number>(6).fill(0),
+    quadratic: [],
+    constraints: [],
+    clauses: NAE_TRIPLES.flatMap(([a, b, c]) => [
+      [pos(a), pos(b), pos(c)],
+      [neg(a), neg(b), neg(c)],
+    ]),
   },
 };

@@ -52,17 +52,25 @@ export type Constraint = {
   slackBound?: number;
 };
 
-/** One literal of a Max-2-SAT clause: variable index plus polarity. */
+/** One literal of a clause: variable index plus polarity. */
 export type Literal = { v: number; negated: boolean };
 
-/** A two-literal clause `(l₁ ∨ l₂)` (§4.3). */
-export type Clause = [Literal, Literal];
+/**
+ * A disjunction of literals, `(l₁ ∨ l₂ ∨ …)`. §4.3's clauses have two; longer
+ * ones make the penalty a polynomial of higher degree, which `derive()` brings
+ * back to quadratic with Rosenberg's reduction (§7 point 4).
+ */
+export type Clause = Literal[];
 
 /** Per-variable metadata — drives axis labels and the domain views. */
 export type VarMeta = {
   /** Display name, e.g. `x₁` or `x₁₁`. */
   name: string;
-  kind: 'decision' | 'slack';
+  /**
+   * `slack` closes an inequality (§5); `aux` stands for a product of two
+   * variables, introduced by the higher-order reduction (§7 point 4).
+   */
+  kind: 'decision' | 'slack' | 'aux';
   /** Original double-subscript label before the paper's renumbering, if any. */
   origin?: string;
   /** Domain coordinates, consumed by the domain views. */
@@ -73,6 +81,8 @@ export type VarMeta = {
   /** For a slack bit: which constraint it belongs to, and its power-of-two weight. */
   slackOf?: number;
   weight?: number;
+  /** For an aux variable: the two variable indices whose product it replaces. */
+  auxOf?: [number, number];
 };
 
 /** An undirected graph, shared by Max-Cut / MVC / Graph Colouring. */
@@ -100,7 +110,10 @@ export type ConstrainedModel = {
    */
   quadratic: { i: number; j: number; coef: number }[];
   constraints: Constraint[];
-  /** Max-2-SAT only: clauses replace the constraint list. */
+  /**
+   * Satisfiability models: the objective is the number of UNSATISFIED clauses,
+   * each counted with weight 1 whatever the penalty scalar.
+   */
   clauses?: Clause[];
   /** Max-Cut only: the objective is generated from the edge list. */
   cutEdges?: [number, number][];
