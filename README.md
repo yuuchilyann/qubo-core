@@ -67,7 +67,7 @@ npm run verify:all
 
 | 指令 | 檢查什麼 |
 |---|---|
-| `npm run verify` | **論文算例**：推導的 Q == 對照矩陣（逐格）、加性常數、窮舉最優解 == 對照解、`yOriginal = yQubo + constant`、最優解代回原始約束全部滿足、直接窮舉原始約束模型 == 對照解。**延伸案例**：QUBO 最優 + 常數 == 約束窮舉最優、每個 QUBO 最優解都可行、簡併度一致（無 slack 時）、輔助變數等於其乘積、由論文數字推得的值（若有）。外加 tabu 回歸守衛 |
+| `npm run verify` | **論文算例**：推導的 Q == 對照矩陣（逐格）、加性常數、窮舉最佳解 == 對照解、`yOriginal = yQubo + constant`、最佳解代回原始約束全部滿足、直接窮舉原始約束模型 == 對照解。**延伸案例**：QUBO 最佳 + 常數 == 約束窮舉最佳、每個 QUBO 最佳解都可行、簡併度一致（無 slack 時）、輔助變數等於其乘積、由論文數字推得的值（若有）。外加 tabu 回歸守衛 |
 | `npm run verify:python` | 內嵌的 Python `build_qubo()` == TypeScript `derive()`，論文算例再 == 對照矩陣（**三方一致**；延伸案例沒有對照矩陣，為兩方一致） |
 | `npm run verify:emit` | 把產出的 Python **原封不動執行**，確認每個案例 × 六種 tier／sampler 組合都印出參照答案（31 案例共 186 支程式） |
 | `npm run verify:embed` | Pegasus 拓樸與 `dwave_networkx` 的 fixture 完全一致；嵌入檢查器擋得下每一種錯誤嵌入；31 個案例全部嵌入成功並通過檢查器 |

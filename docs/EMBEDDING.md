@@ -157,7 +157,7 @@ if (result.ok) checkEmbedding(source, target, result.chains); // { ok, problems 
 
 ## 這個模組**不是**什麼
 
-- **不是最佳嵌入。** 啟發式，沒有最優性保證。
+- **不是最佳嵌入。** 啟發式，沒有最佳性保證。
 - **不是 `EmbeddingComposite` 實際會給的結果。** 那是完整的 minorminer 對真實 QPU 的 working graph
   跑出來的，而且帶隨機性。
 - **找不到不代表不存在。** 上面的容量表就是反例：P(3) 放得下 K₂₄，本庫只找到 K₁₄。

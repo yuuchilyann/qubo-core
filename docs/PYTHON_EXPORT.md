@@ -97,7 +97,7 @@ npm run verify:emit
 它們各自產生**不同的程式**：不同的 import、不同的建構式，而 `mock` 那一支還是一個
 包住另一個 sampler 的 composite。產碼器的錯誤正好會藏在這些差異裡。
 三十一個案例（十一個論文算例＋二十個延伸案例）× 六種 tier／sampler 組合，共 186 支程式。
-延伸案例沒有論文答案，比對的是 `solveConstrained()` 窮舉原始約束模型得到的最優值，
+延伸案例沒有論文答案，比對的是 `solveConstrained()` 窮舉原始約束模型得到的最佳值，
 產出的程式在預期答案的註解裡也是這樣標示來源。
 
 這一道檢查的是**只存在於產碼器裡**的邏輯：上三角轉換、最大化符號翻轉、加性常數還原、
@@ -114,7 +114,7 @@ npm run verify:emit
 
 | Sampler | 套件 | 需要 token | 規模 |
 |---|---|---|---|
-| `dimod.ExactSolver` | `dimod` | ✗ | ≤ 約 20 變數，保證最優 |
+| `dimod.ExactSolver` | `dimod` | ✗ | ≤ 約 20 變數，保證最佳 |
 | `TabuSampler` | `dwave-samplers` | ✗ | 數千變數 |
 | `SimulatedAnnealingSampler` | `dwave-samplers` | ✗ | 數千變數 |
 | `MockDWaveSampler` + `EmbeddingComposite` | `dwave-system` | ✗ | 受 minor-embedding 限制 |
