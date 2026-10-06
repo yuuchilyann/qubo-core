@@ -25,6 +25,7 @@ QUBO 推導引擎、古典求解器與 Python 產碼器。
 | 文件 | 內容 |
 |---|---|
 | [`docs/CASE_CATALOG.md`](docs/CASE_CATALOG.md) | 參考案例集的資料與勾稽狀態；新增案例的步驟 |
+| [`docs/COVERAGE.md`](docs/COVERAGE.md) | 論文提到的每個問題的收錄狀態；不收錄的項目與原因；收錄判準 |
 | [`docs/PYTHON_EXPORT.md`](docs/PYTHON_EXPORT.md) | 兩層產碼、與 `derive.ts` 的同步義務、sampler 目錄 |
 
 ## 內容
@@ -34,7 +35,10 @@ src/
 ├─ types.ts            # ConstrainedModel / QuboModel / SampleSet — 契約
 ├─ qubo.ts             # QuboBuilder、對稱↔上三角、slack 二進位展開
 ├─ derive.ts           # 通用推導引擎（全案唯一入口）
-├─ cases/              # 參考案例集（含對照矩陣）與自訂輸入重建
+├─ reduce.ts           # 子句多項式展開與 Rosenberg 高次項降階（§7 第 4 點）
+├─ constrained.ts      # 不經 QUBO、直接窮舉原始約束模型（延伸案例的參照）
+├─ cases/              # natural / knownPenalty / general：論文 11 個算例（含對照矩陣）
+│                      # extended：論文點名或引用、沒有算例的 20 個問題；mutate：自訂輸入重建
 ├─ samplers/           # bruteForce（精確）、tabu（啟發式）
 ├─ python/             # emit / module / samplers / serialize
 └─ verify/harness.ts   # 對帳邏輯
@@ -58,9 +62,9 @@ npm run verify:all
 
 | 指令 | 檢查什麼 |
 |---|---|
-| `npm run verify` | 推導的 Q == 對照矩陣（逐格）、加性常數、窮舉最優解 == 對照解、`yOriginal = yQubo + constant`、最優解代回原始約束全部滿足。外加 tabu 回歸守衛 |
-| `npm run verify:python` | 內嵌的 Python `build_qubo()` == TypeScript `derive()` == 對照矩陣。**三方一致** |
-| `npm run verify:emit` | 把產出的 Python **原封不動執行**，確認每個案例的兩層產碼都印出預期的答案 |
+| `npm run verify` | **論文算例**：推導的 Q == 對照矩陣（逐格）、加性常數、窮舉最優解 == 對照解、`yOriginal = yQubo + constant`、最優解代回原始約束全部滿足、直接窮舉原始約束模型 == 對照解。**延伸案例**：QUBO 最優 + 常數 == 約束窮舉最優、每個 QUBO 最優解都可行、簡併度一致（無 slack 時）、輔助變數等於其乘積、由論文數字推得的值（若有）。外加 tabu 回歸守衛 |
+| `npm run verify:python` | 內嵌的 Python `build_qubo()` == TypeScript `derive()`，論文算例再 == 對照矩陣（**三方一致**；延伸案例沒有對照矩陣，為兩方一致） |
+| `npm run verify:emit` | 把產出的 Python **原封不動執行**，確認每個案例 × 六種 tier／sampler 組合都印出參照答案（31 案例共 186 支程式） |
 
 `verify:python` 與 `verify:emit` 需要 `python` 在 PATH 上（純 stdlib，不需安裝任何套件）；
 沒有的話會 SKIP 而非誤報通過。
