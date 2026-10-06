@@ -28,3 +28,4 @@ export * from './hardware/problemGraph';
 export * from './hardware/embed';
 export * from './hardware/checkEmbedding';
 export * from './hardware/daPrecision';
+export * from './hardware/daConstraints';

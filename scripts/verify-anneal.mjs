@@ -28,7 +28,7 @@ let failed = 0;
 const mark = (ok) => (ok ? `${GREEN}✓${RESET}` : `${RED}✗${RESET}`);
 
 try {
-  const { verifyAnnealCases, verifyAnnealProperties } = await server.ssrLoadModule(
+  const { verifyAnnealCases, verifyAnnealProperties, verifySplit } = await server.ssrLoadModule(
     '/src/verify/annealer.ts',
   );
 
@@ -65,6 +65,33 @@ try {
   for (const check of verifyAnnealProperties()) {
     console.log(`  ${mark(check.ok)} ${check.name.padEnd(44)} ${DIM}${check.detail}${RESET}`);
     if (!check.ok) failed++;
+  }
+
+  console.log(`
+${BOLD}Submission structure for DA3 and later${RESET} ${DIM}(cost/penalty split; native one-hot and inequalities)${RESET}`);
+  console.log(`${DIM}       §      case                      n      P   one-hot      ineq  eq   slack saved   vars  excluded${RESET}`);
+  console.log(`  ${DIM}excluded = feasible decisions the QUBO cannot reach at zero penalty, because the slack bound is below the row's full range${RESET}`);
+  for (const r of verifySplit()) {
+    const c = r.native.constraints;
+    const count = (k) => c.filter((x) => x.kind === k).length;
+    const hot = count('oneHot') ? `${count('oneHot')} ${r.native.oneHot.kind}` : '—';
+    const row = [
+      r.section.padEnd(6),
+      r.id.padEnd(24),
+      String(r.n).padStart(3),
+      String(r.P).padStart(6),
+      hot.padStart(15),
+      String(count('inequality')).padStart(5),
+      String(count('equality')).padStart(3),
+      String(r.native.slackSaved).padStart(13),
+      `${r.native.paperVars}→${r.native.nativeVars}`.padStart(7),
+      String(r.excluded || '').padStart(9),
+    ].join(' ');
+    console.log(`  ${mark(r.check.ok)}  ${row}`);
+    if (!r.check.ok) {
+      console.log(`        ${RED}${r.check.detail}${RESET}`);
+      failed++;
+    }
   }
 } finally {
   await server.close();

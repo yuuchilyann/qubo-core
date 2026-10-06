@@ -9,6 +9,13 @@
  *      if ANY of the n trials does.
  *   4. Precision: every case loads unchanged on both published register widths;
  *      `quantize` respects its limits on a deliberately non-integral Q.
+ *   5. The cost/penalty split (`verifySplit`): Q(P) = cost + P·penalty at the
+ *      case's own P; the penalty is never negative; it reaches zero only on
+ *      feasible decisions, and does reach zero on the constrained optimum;
+ *      where it is zero, the cost is the original objective. Feasible decisions
+ *      it cannot zero are counted, not failed: they are the ones a slack bound
+ *      chosen below the row's full range shuts out (§5.5's bound is the paper's
+ *      own choice), which a native inequality would not.
  *
  * Check 1 is a regression guard like the tabu agreement, not a correctness
  * requirement — a heuristic may miss. The hit rates it prints are where the
@@ -16,7 +23,9 @@
  */
 
 import { CATALOG } from '../cases';
-import { derive } from '../derive';
+import { checkFeasibility, derive, deriveModel } from '../derive';
+import { objectiveValue, solveConstrained } from '../constrained';
+import { evaluatePolynomial, nativeForm, splitPenalty, type NativeForm } from '../hardware/daConstraints';
 import { evaluate } from '../qubo';
 import { bruteForce } from '../samplers/bruteForce';
 import { digitalAnnealer } from '../samplers/digitalAnnealer';
@@ -134,4 +143,98 @@ export function verifyAnnealProperties(): CheckResult[] {
   });
 
   return checks;
+}
+
+export type SplitRow = {
+  id: string;
+  section: string;
+  n: number;
+  P: number;
+  native: NativeForm;
+  /** Feasible decisions the paper's QUBO cannot reach at zero penalty (slack bound too small). */
+  excluded: number;
+  check: CheckResult;
+};
+
+/** Exhaustive checks stop here; every catalogue case is well below it. */
+const SPLIT_ENUM_LIMIT = 20;
+
+export function verifySplit(): SplitRow[] {
+  return CATALOG.map((qcase) => {
+    const { model: cm } = qcase;
+    const P = qcase.penalty?.paperValue ?? 1;
+    const sign = cm.sense === 'min' ? 1 : -1;
+    const split = splitPenalty(cm);
+    const atP = deriveModel(cm, P).model;
+    const n = atP.n;
+    const problems: string[] = [];
+    let excluded = 0;
+
+    // Q(P) = cost + P·penalty, in the minimising sign convention.
+    let affine = Math.abs(sign * atP.constant - (split.cost.constant + P * split.penalty.constant)) < 1e-9;
+    for (let i = 0; i < n && affine; i++) {
+      for (let j = 0; j < n; j++) {
+        if (Math.abs(sign * atP.Q[i][j] - (split.cost.Q[i][j] + P * split.penalty.Q[i][j])) > 1e-9) {
+          affine = false;
+          break;
+        }
+      }
+    }
+    if (!affine) problems.push(`Q(${P}) ≠ cost + ${P}·penalty`);
+
+    if (n <= SPLIT_ENUM_LIMIT) {
+      const d = cm.numVars;
+      const minPenalty = new Array<number>(2 ** d).fill(Infinity);
+      const x = new Uint8Array(n);
+      let negative = 0;
+      let costWrong = 0;
+      for (let mask = 0; mask < 2 ** n; mask++) {
+        for (let j = 0; j < n; j++) x[j] = (mask >>> j) & 1;
+        const pen = evaluatePolynomial(split.penalty, x);
+        if (pen < -1e-9) negative++;
+        const dm = mask & (2 ** d - 1);
+        if (pen < minPenalty[dm]) minPenalty[dm] = pen;
+        if (Math.abs(pen) < 1e-9) {
+          const want = sign * objectiveValue(cm, Array.from(x.subarray(0, d)));
+          if (Math.abs(evaluatePolynomial(split.cost, x) - want) > 1e-9) costWrong++;
+        }
+      }
+      let infeasibleZero = 0;
+      for (let dm = 0; dm < 2 ** d; dm++) {
+        const dx = Array.from({ length: d }, (_, j) => (dm >>> j) & 1);
+        const feasible = checkFeasibility(cm, dx).feasible;
+        const zero = Math.abs(minPenalty[dm]) < 1e-9;
+        if (zero && !feasible) infeasibleZero++;
+        if (!zero && feasible) excluded++;
+      }
+      const reachable = solveConstrained(cm).argmins.some((ax) => {
+        const dm = ax.reduce((m, v, j) => m + (v << j), 0);
+        return Math.abs(minPenalty[dm]) < 1e-9;
+      });
+      if (negative) problems.push(`penalty negative at ${negative} assignments`);
+      if (infeasibleZero) problems.push(`penalty zero on ${infeasibleZero} infeasible decisions`);
+      if (!reachable) problems.push('no constrained optimum reaches zero penalty');
+      if (costWrong) problems.push(`cost ≠ objective at ${costWrong} zero-penalty assignments`);
+    }
+
+    const native = nativeForm(cm);
+    const slackBits = atP.varMeta.filter((m) => m.kind === 'slack').length;
+    if (native.slackSaved !== slackBits) {
+      problems.push(`native form saves ${native.slackSaved} slack bits, QUBO has ${slackBits}`);
+    }
+
+    return {
+      id: qcase.id,
+      section: qcase.section,
+      n,
+      P,
+      native,
+      excluded,
+      check: {
+        name: `${qcase.id} cost/penalty split`,
+        ok: problems.length === 0,
+        detail: problems.join('; ') || 'ok',
+      },
+    };
+  });
 }

@@ -1,7 +1,8 @@
 # 數位退火（Digital Annealer）演算法重現
 
 `src/samplers/digitalAnnealer.ts` 依照富士通 Digital Annealer（DA）公開發表的演算法實作；
-`src/hardware/daPrecision.ts` 檢查 Q 能否原封不動放進 DA 的整數暫存器。
+`src/hardware/daPrecision.ts` 檢查 Q 能否原封不動放進 DA 的整數暫存器；
+`src/hardware/daConstraints.ts` 把案例改寫成第三代以後的 DA 接受的結構（目標／懲罰分離、one-hot、不等式）。
 
 > **這裡重現的是演算法，不是硬體。**DA 是富士通的專用 CMOS 晶片（「量子啟發」，晶片上沒有量子效應），
 > 每一步的 n 個試翻在硬體上平行評估，有效場也在常數時間內更新完畢。CPU 做同樣的事每步要 O(n)。
@@ -92,9 +93,53 @@ DA 收的是多項式 `Σ h_i x_i + Σ_{i<j} J_ij x_i x_j`，對應本專案的�
 把暫存器刻意縮到 8、6、4 位元時，Number Partitioning、General 0/1、Quadratic Knapsack、
 Capital Budgeting 等係數跨度大的案例，最佳解會被四捨五入移走。懲罰係數 P 越大，跨度越大。
 
+## 交給第三代以後的 DA：提交的結構
+
+`src/hardware/daConstraints.ts`。論文把每條約束都併進同一個 Q，用一個手選的 P 撐住。
+富士通從第三代起的服務（FujitsuDA3Solver）接受更多結構：
+
+1. **目標與懲罰分開提交**（`binary_polynomial`、`penalty_binary_polynomial`），P 變成懲罰的權重，
+   在自動懲罰模式下由求解器於退火中逐步提高；
+2. **one-hot 群組直接宣告**：單向（互不重疊的群組）或雙向（格子的每列、每行各選一個）；
+3. **線性不等式直接宣告**，不必為了收進 QUBO 而加 slack 位元。
+
+### 拆分不是另寫的規則
+
+`splitPenalty(model)` 把同一個模型在 P = 0 與 P = 1 各推導一次相減：
+`deriveModel` 只用 P 去乘懲罰，所以 Q(P) = Q(0) + P·(Q(1) − Q(0))。兩個多項式都換成「求最小」的方向
+（max 問題取負號，因為 DA 一律求最小），常數一起帶著，所以 `cost(x) + P·penalty(x) = ±(xᵀQx + constant)`。
+
+`nativeForm(model)` 把原始模型的每條約束分成三類：`Σ_{j∈S} x_j = 1` 是 one-hot；`≤`／`≥` 是不等式；
+其餘等式留作懲罰。one-hot 群組再判斷是單向、雙向，還是彼此重疊又不成格子。
+
+### 驗證（`npm run verify:anneal` 的第三段）
+
+每個案例都檢查：
+
+- 在案例自己的 P 下，`Q(P) = cost + P·penalty` 逐格成立，常數也成立；
+- 窮舉全部 2ⁿ 組（含 slack 與輔助位元）：懲罰**從不為負**；懲罰為 0 的決策**一定可行**；
+  約束窮舉的最佳解**一定能**讓懲罰為 0；懲罰為 0 時，目標值就是原始目標函數；
+- 原生寫法省下的 slack 位元數 = 論文 QUBO 裡的 slack 位元數。
+
+### 結果
+
+| 寫法上的差異 | 案例 |
+|---|---|
+| 雙向 one-hot（3 × 3 格子） | §5.4 QAP、Travelling Salesman |
+| 單向 one-hot | §5.2 Graph Colouring、Task Allocation、P-Median、Warehouse Location、Clique Partitioning、Community Detection、Shortest Path、Traffic Flow |
+| one-hot 彼此重疊、不成格子 | §5.1 Set Partitioning、Discrete Tomography |
+| 原生不等式省下 slack 位元 | §5.3 General 0/1（10 → 5 個變數）、§5.5 Quadratic Knapsack（6 → 4）、Capital Budgeting（13 → 4）、Multiple Knapsack（16 → 8）、Linear Ordering（14 → 6） |
+
+**一個值得寫下來的發現：**§5.5 的 slack 上界是論文自己挑的，比該列的完整範圍小。結果有 9 組**可行**的決策，
+在論文的 QUBO 裡怎麼選 slack 位元，懲罰都降不到 0。最佳解不在其中，所以論文的答案不受影響；
+但這正是直接宣告不等式能避開的情況。驗證把這 9 組列為「excluded」，不算失敗。
+
+**這是提交的結構，不是富士通的請求格式。**完整格式寫在富士通的 API Reference（QUBO API V3c／V4），
+目前沒有公開。例如 one-hot 群組的變數是否必須連續排列，這裡都沒有重現。
+
 ## 不做的事
 
-- **不產生呼叫富士通服務的程式碼（目前）。**官方服務需要簽約與 access token；
+- **不產生呼叫富士通服務的程式碼（目前）。**請求格式沒有公開（見上一節）；官方服務也需要簽約與 access token；
   富士通的 DADK 不在 PyPI 公開。公開的路徑是 Fixstars Amplify 的 `FujitsuDA3SolverClient`／DA4 client，
   但沒有 token 就無法實際執行驗證，與 `verify:emit`「每支程式都真的跑過」的標準不符。
 - **不實作平行回火版（PTDA）。**論文 §II.D 有描述，但它的回火交換在 CPU 上執行，不是 DA 本體。
