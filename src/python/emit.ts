@@ -15,9 +15,11 @@
 
 import type { CatalogCase, ConstrainedModel, QuboModel } from '../types';
 import { CONSTRAINED_LIMIT, solveConstrained } from '../constrained';
+import { nativeForm, splitPenalty } from '../hardware/daConstraints';
 import { toUpperTriangular } from '../qubo';
+import { DA_FUNCTION } from './digitalAnnealer';
 import { FUNCTION_MODULE } from './module';
-import { findSampler, type SamplerId } from './samplers';
+import { findSampler, type SamplerId, type SamplerSpec } from './samplers';
 import { pyRepr, toPythonModel } from './serialize';
 
 export type NotebookCell = { source: string };
@@ -133,7 +135,10 @@ ${body}${extra ? `\n${extra}` : ''}
 
 /** `{(i, j): c, …}` wrapped at a readable width. */
 function quboDictLiteral(model: QuboModel): string {
-  const upper = toUpperTriangular(model.Q);
+  return upperDictLiteral(toUpperTriangular(model.Q));
+}
+
+function upperDictLiteral(upper: number[][]): string {
   const entries: string[] = [];
   for (let i = 0; i < upper.length; i++) {
     for (let j = i; j < upper.length; j++) {
@@ -152,11 +157,41 @@ function quboDictLiteral(model: QuboModel): string {
     }
   }
   if (line) lines.push(line);
-  return `{\n${lines.join('\n')}\n}`;
+  return entries.length ? `{\n${lines.join('\n')}\n}` : '{}';
 }
+
+const PRINT_RESULT = `print("x          =", x)
+print("x^T Q x    =", y_qubo)
+print("original y =", y_original)`;
 
 const SOLVE_AND_REPORT = (samplerId: SamplerId) => {
   const s = findSampler(samplerId);
+  if (s.family === 'standalone') {
+    return `# The Digital Annealer's ALGORITHM, run here on your own machine. It is a
+# heuristic: it reports the best assignment it found, not a proof of optimality.
+x = digital_annealer(Q, N, SENSE, ${s.sampleArgs})
+y_qubo = sum(c for (i, j), c in Q.items() if x[i] and x[j])
+y_original = y_qubo + OFFSET
+
+${PRINT_RESULT}`;
+  }
+  if (s.family === 'amplify') {
+    return `# Amplify MINIMISES, so a maximisation is submitted negated.
+g = VariableGenerator()
+q = g.array("Binary", N)
+s = 1 if SENSE == "min" else -1
+f = sum(s * c * (q[i] if i == j else q[i] * q[j]) for (i, j), c in Q.items())
+model = Model(f)
+
+${amplifyClient([])}
+
+result = solve(model, client)
+x = [int(v) for v in q.evaluate(result.best.values)]
+y_qubo = sum(c for (i, j), c in Q.items() if x[i] and x[j])
+y_original = y_qubo + OFFSET
+
+${PRINT_RESULT}`;
+  }
   return `# dimod always MINIMISES, so a maximisation is submitted negated and the
 # reported energy is flipped back.
 qubo = Q if SENSE == "min" else {k: -v for k, v in Q.items()}
@@ -170,10 +205,28 @@ x = [int(best.sample[i]) for i in range(N)]
 y_qubo = best.energy if SENSE == "min" else -best.energy
 y_original = y_qubo + OFFSET
 
-print("x          =", x)
-print("x^T Q x    =", y_qubo)
-print("original y =", y_original)`;
+${PRINT_RESULT}`;
 };
+
+/**
+ * Fujitsu's DA4 client, configured. The attribute names are the ones Amplify
+ * documents for `FujitsuDA4Client`; `flags` turns on the structure the model
+ * actually has.
+ */
+function amplifyClient(flags: string[]): string {
+  return [
+    '# Needs a Fujitsu Digital Annealer token (see the install step above).',
+    'client = FujitsuDA4Client()',
+    'client.token = os.environ.get("FUJITSU_DA_TOKEN", "")',
+    'client.parameters.time_limit_sec = timedelta(seconds=10)',
+    ...flags.map((f) => `client.${f} = True`),
+  ].join('\n');
+}
+
+/** The solver function a standalone program carries, if any. */
+function solverDefinition(s: SamplerSpec): string[] {
+  return s.family === 'standalone' ? ['', '', DA_FUNCTION.trimEnd(), ''] : [];
+}
 
 /**
  * The expected output block.
@@ -211,6 +264,7 @@ export function emitTier1For(
   return [
     header(ctx),
     s.imports.join('\n'),
+    ...solverDefinition(s),
     '',
     `N = ${model.n}`,
     `SENSE = "${model.sense}"`,
@@ -255,12 +309,14 @@ export function emitTier2For(
   options: { modelComment?: string } = {},
 ): string {
   const s = findSampler(samplerId);
+  if (s.family === 'amplify') return emitAmplifyNativeFor(ctx, constrained, model, options);
   return [
     header(
       ctx,
       'Q is DERIVED here rather than pasted in, so the same code handles any\nmodel of this shape — which is what the tutorial is really teaching.',
     ),
     s.imports.join('\n'),
+    ...solverDefinition(s),
     '',
     '',
     FUNCTION_MODULE.trimEnd(),
@@ -280,6 +336,133 @@ export function emitTier2For(
   ].join('\n');
 }
 
+const NATIVE_NOTE = `The constraints are DECLARED to the Digital Annealer instead of being folded
+into Q: one-hot groups and linear inequalities go to Fujitsu's native
+interfaces (so no slack bits are needed), and P only weights what remains a
+penalty. Needs Fixstars Amplify and a Fujitsu Digital Annealer token.`;
+
+/**
+ * Tier 2 for Fujitsu through Amplify: the original model's constraints declared
+ * natively rather than penalised into one Q.
+ *
+ * Built from `splitPenalty` and `nativeForm`, so the objective is the same
+ * derivation the page shows with P set to 0, slack bits dropped (an inequality
+ * declared as such needs none). Auxiliary variables from a higher-order
+ * reduction stay, with their Rosenberg penalty weighted by P.
+ */
+export function emitAmplifyNativeFor(
+  ctx: EmitContext,
+  constrained: ConstrainedModel,
+  model: QuboModel,
+  options: { modelComment?: string } = {},
+): string {
+  const s = findSampler('amplify-da4');
+  const split = splitPenalty(constrained);
+  const native = nativeForm(constrained);
+  const keep = split.varMeta.flatMap((m, i) => (m.kind === 'slack' ? [] : [i]));
+  const costUpper = toUpperTriangular(split.cost.Q);
+  split.varMeta.forEach((m, i) => {
+    if (m.kind !== 'slack') return;
+    if (costUpper[i].some((v) => v !== 0) || costUpper.some((row) => row[i] !== 0)) {
+      throw new Error('emitAmplifyNativeFor: the objective touches a slack bit');
+    }
+  });
+  const cost = keep.map((i) => keep.map((j) => costUpper[i][j]));
+  // Without constraints the derivation has no slack bits, so its variables are
+  // exactly `keep`, in order: decision variables, then auxiliaries.
+  const auxPenalty = splitPenalty({ ...constrained, constraints: [] }).penalty;
+  if (auxPenalty.Q.length !== keep.length) {
+    throw new Error('emitAmplifyNativeFor: auxiliary variables do not line up');
+  }
+
+  const flags = ['set_penalty_binary_polynomial'];
+  if (native.constraints.some((c) => c.kind === 'inequality')) flags.push('set_inequalities');
+  if (native.oneHot.kind === 'oneWay') flags.push('set_one_way_one_hot_groups');
+  if (native.oneHot.kind === 'twoWay') flags.push('set_two_way_one_hot_groups');
+
+  const rows = native.constraints.map((c) => {
+    const k = constrained.constraints[c.index];
+    const terms = c.support.map((j) => `(${j}, ${num(k.coeffs[j])})`).join(', ');
+    const label = JSON.stringify(k.label ?? `constraint ${c.index + 1}`);
+    const kind = c.kind === 'oneHot' ? 'one_hot' : 'linear';
+    return `    {"label": ${label}, "kind": "${kind}", "terms": [${terms}], "rel": "${k.rel}", "rhs": ${num(k.rhs)}},`;
+  });
+
+  const expected =
+    ctx.expectation?.kind === 'answer'
+      ? `# Expected, ${ctx.expectation.label}:\n#   original y = ${ctx.expectation.yOriginal}\n#   feasible   = True`
+      : expectation(ctx.expectation);
+
+  return [
+    header(ctx, NATIVE_NOTE),
+    ['import functools', ...s.imports].join('\n'),
+    'from amplify import Poly, equal_to, greater_equal, less_equal, one_hot',
+    '',
+    options.modelComment ?? '# ── the original constrained model, declared rather than penalised ──',
+    `N = ${keep.length}  # decision variables${keep.length > constrained.numVars ? ' and auxiliaries' : ''}; no slack bits`,
+    `P = ${num(model.P)}  # weight of whatever remains a penalty`,
+    `SIGN = ${constrained.sense === 'min' ? 1 : -1}  # COST is minimised; for a max problem it is the negated objective`,
+    `COST_CONSTANT = ${num(split.cost.constant)}`,
+    '',
+    '# The objective to MINIMISE, upper-triangular: {(i, j): coefficient}',
+    `COST = ${upperDictLiteral(cost)}`,
+    '',
+    '# Ties each auxiliary variable to the product it replaces (Rosenberg, §7).',
+    `AUX_PENALTY = ${upperDictLiteral(toUpperTriangular(auxPenalty.Q))}`,
+    '',
+    '# Each constraint of the original model: sum(a * x[j]) rel rhs.',
+    rows.length ? `CONSTRAINTS = [\n${rows.join('\n')}\n]` : 'CONSTRAINTS = []',
+    '',
+    'g = VariableGenerator()',
+    'q = g.array("Binary", N)',
+    '',
+    '',
+    'def poly(d):',
+    '    # Start from Poly() so a zero objective is still a polynomial, not the int 0.',
+    '    return sum((c * (q[i] if i == j else q[i] * q[j]) for (i, j), c in d.items()), Poly())',
+    '',
+    '',
+    'def declare(c):',
+    '    lhs = sum(a * q[j] for j, a in c["terms"])',
+    '    if c["kind"] == "one_hot":',
+    '        con = one_hot(lhs, label=c["label"])',
+    '    elif c["rel"] == "=":',
+    '        con = equal_to(lhs, c["rhs"], label=c["label"])',
+    '    elif c["rel"] == "<=":',
+    '        con = less_equal(lhs, c["rhs"], label=c["label"])',
+    '    else:',
+    '        con = greater_equal(lhs, c["rhs"], label=c["label"])',
+    '    con.weight = P  # used only where the constraint ends up as a penalty',
+    '    return con',
+    '',
+    '',
+    'def holds(c):',
+    '    v = sum(a * x[j] for j, a in c["terms"])',
+    '    return v == c["rhs"] if c["rel"] == "=" else v <= c["rhs"] if c["rel"] == "<=" else v >= c["rhs"]',
+    '',
+    '',
+    'objective = poly(COST) + P * poly(AUX_PENALTY)',
+    'if CONSTRAINTS:',
+    '    model = objective + functools.reduce(lambda a, b: a + b, map(declare, CONSTRAINTS))',
+    'else:',
+    '    model = Model(objective)',
+    '',
+    amplifyClient(flags),
+    '',
+    'result = solve(model, client)',
+    'x = [int(v) for v in q.evaluate(result.best.values)]',
+    'y_original = SIGN * (COST_CONSTANT + sum(c for (i, j), c in COST.items() if x[i] and x[j]))',
+    'feasible = all(holds(c) for c in CONSTRAINTS)',
+    '',
+    'print("x          =", x)',
+    'print("original y =", y_original)',
+    'print("feasible   =", feasible)',
+    '',
+    expected,
+    '',
+  ].join('\n');
+}
+
 /** Notebook form: install, then the script, split so cells can be re-run. */
 export function buildNotebook(
   qcase: CatalogCase,
@@ -290,18 +473,29 @@ export function buildNotebook(
 ): NotebookCell[] {
   const s = findSampler(samplerId);
   const ctx = contextFor(qcase, model);
-  const cells: NotebookCell[] = [
-    // Colab needs the `!` prefix; the shell block above the script does not.
-    { source: `!pip install ${[...new Set(installPackages)].join(' ')}` },
-  ];
+  const cells: NotebookCell[] = [];
+  const pkgs = [...new Set(installPackages)];
+  // Colab needs the `!` prefix; the shell block above the script does not.
+  if (pkgs.length) cells.push({ source: `!pip install ${pkgs.join(' ')}` });
 
   if (s.needsToken) {
     cells.push({
-      source: `# This sampler needs a D-Wave Leap account. In Colab, set the token as an
+      source:
+        s.family === 'amplify'
+          ? `# This client needs a Fujitsu Digital Annealer token. In Colab, set it as an
+# environment variable before running the cells below.
+import os
+os.environ["FUJITSU_DA_TOKEN"] = "paste your token here"`
+          : `# This sampler needs a D-Wave Leap account. In Colab, set the token as an
 # environment variable before running the cells below.
 import os
 os.environ["DWAVE_API_TOKEN"] = "paste your token here"`,
     });
+  }
+
+  if (tier === 2 && s.family === 'amplify') {
+    cells.push({ source: emitTier2(qcase, model, samplerId) });
+    return cells;
   }
 
   if (tier === 1) {
@@ -309,6 +503,7 @@ os.environ["DWAVE_API_TOKEN"] = "paste your token here"`,
       source: [
         header(ctx),
         s.imports.join('\n'),
+        ...solverDefinition(s),
         '',
         `N = ${model.n}`,
         `SENSE = "${model.sense}"`,
@@ -318,7 +513,9 @@ os.environ["DWAVE_API_TOKEN"] = "paste your token here"`,
       ].join('\n'),
     });
   } else {
-    cells.push({ source: [s.imports.join('\n'), '', FUNCTION_MODULE.trimEnd()].join('\n') });
+    cells.push({
+      source: [s.imports.join('\n'), ...solverDefinition(s), '', FUNCTION_MODULE.trimEnd()].join('\n'),
+    });
     cells.push({
       source: [
         emitModelLiteral(qcase.model),

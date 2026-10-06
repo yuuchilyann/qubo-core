@@ -1,7 +1,7 @@
 {
   "name": "qubo-core",
   "private": true,
-  "version": "0.12.0",
+  "version": "0.13.0",
   "type": "module",
   "description": "QUBO derivation engine, classical solvers and Python emitters. Turns a constrained 0/1 model into the standard form xᵀQx.",
   "exports": {
@@ -35,7 +35,8 @@
     "verify:all": "npm run verify && npm run verify:python && npm run verify:emit && npm run verify:embed && npm run verify:anneal",
     "verify:embed": "node scripts/verify-embed.mjs",
     "compare:minorminer": "node scripts/compare-minorminer.mjs",
-    "verify:anneal": "node scripts/verify-anneal.mjs"
+    "verify:anneal": "node scripts/verify-anneal.mjs",
+    "check:amplify": "node scripts/check-amplify.mjs"
   },
   "devDependencies": {
     "typescript": "^6.0.3",

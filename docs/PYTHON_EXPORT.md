@@ -96,7 +96,36 @@ npm run verify:emit
 **每一個不需要 token 的 sampler 都會被實際執行**，而不是只跑 `ExactSolver`。理由是
 它們各自產生**不同的程式**：不同的 import、不同的建構式，而 `mock` 那一支還是一個
 包住另一個 sampler 的 composite。產碼器的錯誤正好會藏在這些差異裡。
-三十一個案例（十一個論文算例＋二十個延伸案例）× 六種 tier／sampler 組合，共 186 支程式。
+三十一個案例（十一個論文算例＋二十個延伸案例）× 十種 tier／sampler 組合，共 310 支程式。
+
+富士通的兩個選項性質不同，驗證方式也不同：
+
+- **`da`（DA 演算法的純 Python 版）不用樁，真的執行。**程式自帶 `digital_annealer()`
+  （`src/python/digitalAnnealer.ts`，照 Aramon 2019 的 Algorithm 2，與 `samplers/digitalAnnealer.ts`
+  同樣的預設溫度與偏移量），每個案例的兩層都必須由真正的退火達到參照答案。它是啟發式，種子固定所以結果穩定；
+  改了排程或種子要重跑。
+- **`amplify-da4`（透過 Fixstars Amplify 呼叫富士通第四代 DA）對樁執行。**沒有富士通 token 就無法真的跑。
+  Amplify 的樁實作二元多項式、約束、模型與窮舉的 `solve()`，**把每條約束都當硬性條件**；
+  `FujitsuDA4Client` 的樁只接受 Amplify 文件列出的屬性（`token`、`parameters.time_limit_sec`、
+  `set_penalty_binary_polynomial`、`set_inequalities`、`set_one_way_one_hot_groups`、
+  `set_two_way_one_hot_groups`），拼錯就失敗。它證明程式本身（約束轉換、符號、索引），
+  **不**證明富士通的服務會回傳這個答案。第 2 層是「原生約束」寫法（來自 `hardware/daConstraints`），
+  沒有單一 Q，所以檢查的是原始目標值與每條約束是否成立。
+
+樁只能表達我們對 Amplify API 的理解，所以另有一道**選用**檢查補上這個缺口：
+
+```bash
+pip install amplify
+npm run check:amplify      # 若 amplify 不在 PATH 上的 python，設 PYTHON=<直譯器路徑>
+```
+
+它用**真的 Amplify** 執行全部 62 支 `amplify-da4` 程式（31 案例 × 2 層）：變數、多項式、約束、模型、
+`FujitsuDA4Client`（未知屬性會被拒絕）都是真的，也會跑 Amplify 自己的本機轉換 `to_unconstrained_poly()`。
+只有 `solve()` 換成在真模型的變數上窮舉、以真約束的 `is_satisfied()` 篩選。所以它仍然**不**證明富士通的服務。
+它需要安裝 Amplify，因此不在 `verify:all` 裡。
+
+最近一次結果（2026-10-06）：**Amplify 1.7.3，62／62 通過**。附帶確認：`FujitsuDA4Client` 預設就開啟
+`set_penalty_binary_polynomial` 與 `set_inequalities`；產出的程式仍明寫出來，讀者才看得到提交的是什麼。
 延伸案例沒有論文答案，比對的是 `solveConstrained()` 窮舉原始約束模型得到的最佳值，
 產出的程式在預期答案的註解裡也是這樣標示來源。
 
@@ -120,6 +149,8 @@ npm run verify:emit
 | `MockDWaveSampler` + `EmbeddingComposite` | `dwave-system` | ✗ | 受 minor-embedding 限制 |
 | `DWaveSampler` + `EmbeddingComposite` | `dwave-ocean-sdk` | ✓ | 受 minor-embedding 限制 |
 | `LeapHybridSampler` | `dwave-ocean-sdk` | ✓ | 數萬變數 |
+| `da`：Digital Annealer algorithm（純 Python） | 無 | ✗ | 啟發式，適合數十個變數；不是富士通硬體 |
+| `amplify-da4`：`FujitsuDA4Client`（Fixstars Amplify） | `amplify` | ✓（富士通） | 第四代 DA，最多 10 萬變數 |
 
 參考案例集最大 15 變數，都在 `ExactSolver` 射程內，所以無需 token 的四個選項
 產出的程式碼是**真的能跑並得到論文答案**的，不是示意用的。

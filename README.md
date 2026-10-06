@@ -71,7 +71,7 @@ npm run verify:all
 |---|---|
 | `npm run verify` | **論文算例**：推導的 Q == 對照矩陣（逐格）、加性常數、窮舉最佳解 == 對照解、`yOriginal = yQubo + constant`、最佳解代回原始約束全部滿足、直接窮舉原始約束模型 == 對照解。**延伸案例**：QUBO 最佳 + 常數 == 約束窮舉最佳、每個 QUBO 最佳解都可行、簡併度一致（無 slack 時）、輔助變數等於其乘積、由論文數字推得的值（若有）。外加 tabu 回歸守衛 |
 | `npm run verify:python` | 內嵌的 Python `build_qubo()` == TypeScript `derive()`，論文算例再 == 對照矩陣（**三方一致**；延伸案例沒有對照矩陣，為兩方一致） |
-| `npm run verify:emit` | 把產出的 Python **原封不動執行**，確認每個案例 × 六種 tier／sampler 組合都印出參照答案（31 案例共 186 支程式） |
+| `npm run verify:emit` | 把產出的 Python **原封不動執行**，確認每個案例 × 十種 tier／sampler 組合都印出參照答案（31 案例共 310 支程式；DA 演算法版是真的執行退火） |
 | `npm run verify:embed` | Pegasus 拓樸與 `dwave_networkx` 的 fixture 完全一致；嵌入檢查器擋得下每一種錯誤嵌入；31 個案例全部嵌入成功並通過檢查器 |
 | `npm run verify:anneal` | 數位退火重現：31 個案例的最佳值都達到窮舉最佳（回歸守衛）、同種子同結果、平行試翻的接受率不低於單位元 SA、每個案例都放得進兩代 DA 的暫存器、`quantize` 落在暫存器範圍內；目標／懲罰分離：`Q(P) = cost + P·penalty`、懲罰不為負、懲罰為 0 只出現在可行解且最佳解達得到、原生寫法省下的 slack 位元數一致 |
 
@@ -80,6 +80,7 @@ npm run verify:all
 
 另有 `npm run compare:minorminer`：把本庫的嵌入和 Ocean 的 minorminer 並排比較。
 它需要安裝 Ocean，只供參考，**不在** `verify:all` 裡。
+`npm run check:amplify` 用真的 Fixstars Amplify 執行全部 `amplify-da4` 程式（只有 `solve()` 以本機窮舉代替，因為沒有富士通 token），同樣需要另外安裝，不在 `verify:all` 裡。
 
 ## ⚠️ 唯一的同步義務
 
@@ -97,7 +98,7 @@ npm run verify:all
 以 git dependency 釘 tag：
 
 ```json
-{ "dependencies": { "qubo-core": "github:yuuchilyann/qubo-core#v0.12.0" } }
+{ "dependencies": { "qubo-core": "github:yuuchilyann/qubo-core#v0.13.0" } }
 ```
 
 | tag | 內容 |
@@ -114,6 +115,7 @@ npm run verify:all
 | `v0.10.0` | **硬體嵌入**（工具功能，不是案例，論文 p.33）：`hardware/pegasus`（`dwave_networkx` 的 Pegasus 拓樸與版面，以 fixture 驗證）、`hardware/problemGraph`、`hardware/embed`（簡化的 minorminer 啟發式，可重現、有工作量上限）、`hardware/checkEmbedding`（獨立檢查器）。新增 `verify:embed`（併入 `verify:all`）與 `compare:minorminer`。PRNG 抽成 `random.ts`，tabu 結果不變。既有 API 無變更 |
 | `v0.11.0` | **數位退火**（工具功能，不是案例）：`samplers/digitalAnnealer`（照 Aramon et al. 2019 的 Algorithm 2 重現平行試翻與動態偏移；`trial: 'single'` 為同排程的單位元 SA 對照；可輸出教學軌跡）、`hardware/daPrecision`（第一代與第三代 DA 的暫存器寬度、`precisionReport`、`quantize`）。新增 `verify:anneal`（併入 `verify:all`）與 `docs/DIGITAL_ANNEALER.md`。既有 API 無變更 |
 | `v0.12.0` | **第三代以後的 DA 提交結構**：`hardware/daConstraints`。`splitPenalty`（在 P = 0 與 P = 1 各推導一次相減，得到目標與懲罰兩個多項式）、`nativeForm`（每條約束分成 one-hot／不等式／懲罰，one-hot 判斷單向、雙向或重疊；計算原生不等式省下的 slack 位元）、`evaluatePolynomial`。`verify:anneal` 新增窮舉檢查。既有 API 無變更 |
+| `v0.13.0` | **富士通 DA 的 Python 產碼**：sampler 目錄新增 `da`（DA 演算法的純 Python 版，免安裝，`verify:emit` 實際執行）與 `amplify-da4`（透過 Fixstars Amplify 的 `FujitsuDA4Client`，需要富士通 token；第 2 層為原生約束寫法，`emitAmplifyNativeFor`）。`SamplerSpec` 新增 `family` 與選填的 `tokenSetup`，新增 `tokenSetupFor()` 與選用的 `check:amplify`（真的 Amplify 1.7.3 上 62／62 通過）；`installCommand()` 在沒有套件時回傳空字串，非 Ocean 套件的 conda 指令改走 pip。`verify:emit` 從 186 支擴充到 310 支。**消費端要補兩個字典鍵**：`sampler.limit.da`、`sampler.limit.amplifyDa4` |
 
 沒有 build 步驟：原始碼以 TypeScript 出貨，因為消費端都是 bundler 環境，
 而且這樣驗證腳本檢查的就是前端實際載入的那些模組，不是它們的編譯副本。

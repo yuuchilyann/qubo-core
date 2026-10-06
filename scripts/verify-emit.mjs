@@ -17,6 +17,15 @@
  * anything into the user's interpreter. Both tiers are exercised, against every
  * sampler a reader can run without an account.
  *
+ * Two programs are different in kind. `da` carries its own solver, the Digital
+ * Annealer's algorithm in plain Python, and it runs FOR REAL here: no stub, the
+ * actual anneal has to reach the reference answer. `amplify-da4` calls
+ * Fujitsu's DA4 through Fixstars Amplify and cannot run without a Fujitsu
+ * token, so it runs against a stub of Amplify that enforces the documented
+ * client attributes and treats every constraint as hard. A green line for it
+ * proves the program — the constraint translation, the signs, the indexing —
+ * and nothing about Fujitsu's service.
+ *
  * **What a green line does and does not mean.** Every stubbed sampler is the
  * same brute-force solver under a different name, so this proves the program:
  * the imports resolve, the construction expression is well formed, the keyword
@@ -58,6 +67,10 @@ const TIER_SAMPLERS = [
   [2, 'sa'],
   [1, 'tabu'],
   [1, 'mock'],
+  [1, 'da'],
+  [2, 'da'],
+  [1, 'amplify-da4'],
+  [2, 'amplify-da4'],
 ];
 
 /** A stand-in for Ocean's dimod, sufficient for the code we emit. */
@@ -153,6 +166,145 @@ sys.modules["dwave.samplers"] = _samplers
 sys.modules["dwave.system"] = _system
 sys.modules["dwave.system.testing"] = _testing
 
+# ── amplify ───────────────────────────────────────────────────────────────────
+# A stand-in for Fixstars Amplify, enough for the programs emitted for
+# FujitsuDA4Client. Polynomials over binary variables (x*x = x), constraints,
+# a model, and a solve() that enumerates every assignment and treats each
+# constraint as HARD. The client accepts only the attributes Amplify documents,
+# so a misspelt flag fails here instead of being silently ignored.
+from datetime import timedelta as _timedelta
+
+class _Poly:
+    def __init__(self, terms=None):
+        self.t = dict(terms or {})
+    @staticmethod
+    def of(v):
+        return v if isinstance(v, _Poly) else _Poly({frozenset(): v})
+    def __add__(self, o):
+        o = _Poly.of(o)
+        if not isinstance(o, _Poly):
+            return NotImplemented
+        t = dict(self.t)
+        for k, c in o.t.items():
+            t[k] = t.get(k, 0) + c
+        return _Poly(t)
+    __radd__ = __add__
+    def __neg__(self):
+        return _Poly({k: -c for k, c in self.t.items()})
+    def __sub__(self, o):
+        return self + (-_Poly.of(o))
+    def __rsub__(self, o):
+        return _Poly.of(o) + (-self)
+    def __mul__(self, o):
+        o = _Poly.of(o)
+        t = {}
+        for a, ca in self.t.items():
+            for b, cb in o.t.items():
+                k = a | b
+                t[k] = t.get(k, 0) + ca * cb
+        return _Poly(t)
+    __rmul__ = __mul__
+    def value(self, x):
+        return sum(c for k, c in self.t.items() if all(x[i] for i in k))
+
+class _Array(list):
+    def evaluate(self, values):
+        return [values[i] for i in range(len(self))]
+
+class _Generator:
+    def __init__(self):
+        self.n = 0
+    def array(self, kind, n):
+        assert kind == "Binary", kind
+        start, self.n = self.n, self.n + n
+        return _Array(_Poly({frozenset([start + i]): 1}) for i in range(n))
+
+class _Constraint:
+    def __init__(self, lhs, rel, rhs, label):
+        self.lhs, self.rel, self.rhs, self.label, self.weight = _Poly.of(lhs), rel, rhs, label, 1
+    def holds(self, x):
+        v = self.lhs.value(x)
+        return v == self.rhs if self.rel == "=" else v <= self.rhs if self.rel == "<=" else v >= self.rhs
+    def __add__(self, o):
+        return _ConstraintList([self]) + o
+
+class _ConstraintList:
+    def __init__(self, items):
+        self.items = list(items)
+    def __add__(self, o):
+        return _ConstraintList(self.items + (o.items if isinstance(o, _ConstraintList) else [o]))
+
+class _Model:
+    def __init__(self, objective, constraints=None):
+        self.objective = _Poly.of(objective)
+        self.constraints = constraints.items if isinstance(constraints, _ConstraintList) else (
+            [constraints] if constraints else [])
+
+_poly_plain_add = _Poly.__add__
+def _poly_add_constraints(self, o):
+    if isinstance(o, (_Constraint, _ConstraintList)):
+        return _Model(self, o)
+    return _poly_plain_add(self, o)
+_Poly.__add__ = _poly_add_constraints
+
+def one_hot(lhs, label=None):
+    return _Constraint(lhs, "=", 1, label)
+def equal_to(lhs, rhs, label=None):
+    return _Constraint(lhs, "=", rhs, label)
+def less_equal(lhs, rhs, label=None):
+    return _Constraint(lhs, "<=", rhs, label)
+def greater_equal(lhs, rhs, label=None):
+    return _Constraint(lhs, ">=", rhs, label)
+
+class _Params:
+    def __setattr__(self, k, v):
+        assert k == "time_limit_sec", "unknown parameter " + k
+        assert isinstance(v, _timedelta), "time_limit_sec must be a timedelta"
+        object.__setattr__(self, k, v)
+
+class FujitsuDA4Client:
+    _known = {"token", "set_penalty_binary_polynomial", "set_inequalities",
+              "set_one_way_one_hot_groups", "set_two_way_one_hot_groups"}
+    def __init__(self):
+        object.__setattr__(self, "parameters", _Params())
+    def __setattr__(self, k, v):
+        assert k in self._known, "unknown client attribute " + k
+        object.__setattr__(self, k, v)
+
+class _Best:
+    def __init__(self, values):
+        self.values = values
+class _Result:
+    def __init__(self, values):
+        self.best = _Best(values)
+
+def solve(model, client):
+    assert isinstance(client, FujitsuDA4Client)
+    assert isinstance(getattr(client, "token", None), str), "token not set"
+    obj = [(tuple(k), c) for k, c in model.objective.t.items()]
+    n = 1 + max([i for k, _ in obj for i in k] + [i for con in model.constraints for k in con.lhs.t for i in k] + [-1])
+    best, best_e = None, None
+    for bits in itertools.product((0, 1), repeat=n):
+        if not all(con.holds(bits) for con in model.constraints):
+            continue
+        e = sum(c for k, c in obj if all(bits[i] for i in k))
+        if best_e is None or e < best_e:
+            best, best_e = bits, e
+    assert best is not None, "no feasible assignment"
+    return _Result({i: best[i] for i in range(n)})
+
+_amp = types.ModuleType("amplify")
+_amp.VariableGenerator = _Generator
+_amp.Poly = _Poly
+_amp.Model = _Model
+_amp.solve = solve
+_amp.FujitsuDA4Client = FujitsuDA4Client
+_amp.one_hot = one_hot
+_amp.equal_to = equal_to
+_amp.less_equal = less_equal
+_amp.greater_equal = greater_equal
+sys.modules["amplify"] = _amp
+
 # Capture what the emitted script prints instead of letting it hit stdout.
 _captured = []
 _real_print = print
@@ -164,7 +316,8 @@ builtins.print = print
 
 const REPORT = `
 builtins.print = _real_print
-_real_print(json.dumps({"x": x, "y_qubo": y_qubo, "y_original": y_original}))
+_real_print(json.dumps({"x": x, "y_qubo": globals().get("y_qubo"), "y_original": y_original,
+                        "feasible": globals().get("feasible")}))
 `;
 
 function runPython(source) {
@@ -228,25 +381,32 @@ try {
         got = JSON.parse(raw.trim().split('\n').pop());
       } catch (e) {
         console.log(
-          `  ${RED}✗${RESET} ${qcase.section.padEnd(6)} tier ${tier} ${sampler.padEnd(5)} ${RED}${String(e.message).trim().split('\n').slice(-1)[0]}${RESET}`,
+          `  ${RED}✗${RESET} ${qcase.section.padEnd(6)} tier ${tier} ${sampler.padEnd(11)} ${RED}${String(e.message).trim().split('\n').slice(-1)[0]}${RESET}`,
         );
         failed++;
         continue;
       }
 
       const problems = [];
-      if (got.y_qubo !== expect.yQubo) problems.push(`xᵀQx=${got.y_qubo} ${ref}=${expect.yQubo}`);
+      // The native Amplify program has no single Q: it reports the original
+      // objective and whether every declared constraint holds.
+      const native = tier === 2 && sampler === 'amplify-da4';
+      if (native) {
+        if (got.feasible !== true) problems.push('constraints violated');
+      } else if (got.y_qubo !== expect.yQubo) {
+        problems.push(`xᵀQx=${got.y_qubo} ${ref}=${expect.yQubo}`);
+      }
       if (got.y_original !== expect.yOriginal) {
         problems.push(`original=${got.y_original} ${ref}=${expect.yOriginal}`);
       }
       // Degenerate optima mean a different x can be equally correct, so the
       // assignment is only required to ATTAIN the paper's value, not equal its x.
-      if (got.x.length !== model.n) problems.push(`|x|=${got.x.length} expected ${model.n}`);
+      if (!native && got.x.length !== model.n) problems.push(`|x|=${got.x.length} expected ${model.n}`);
 
       const ok = problems.length === 0;
       console.log(
-        `  ${ok ? `${GREEN}✓${RESET}` : `${RED}✗${RESET}`} ${qcase.section.padEnd(6)} tier ${tier} ${sampler.padEnd(5)} ` +
-          `${DIM}xᵀQx=${got.y_qubo} original=${got.y_original}${RESET}` +
+        `  ${ok ? `${GREEN}✓${RESET}` : `${RED}✗${RESET}`} ${qcase.section.padEnd(6)} tier ${tier} ${sampler.padEnd(11)} ` +
+          `${DIM}${native ? 'native' : `xᵀQx=${got.y_qubo}`} original=${got.y_original}${RESET}` +
           (ok ? '' : `  ${RED}${problems.join('; ')}${RESET}`),
       );
       if (!ok) failed++;

@@ -139,8 +139,9 @@ Capital Budgeting 等係數跨度大的案例，最佳解會被四捨五入移�
 
 ## 不做的事
 
-- **不產生呼叫富士通服務的程式碼（目前）。**請求格式沒有公開（見上一節）；官方服務也需要簽約與 access token；
-  富士通的 DADK 不在 PyPI 公開。公開的路徑是 Fixstars Amplify 的 `FujitsuDA3SolverClient`／DA4 client，
-  但沒有 token 就無法實際執行驗證，與 `verify:emit`「每支程式都真的跑過」的標準不符。
+- **不產生直接呼叫富士通 Web API 或 DADK 的程式碼。**請求格式沒有公開（見上一節），DADK 也不在 PyPI。
+  能寫下來的路徑是 Fixstars Amplify 公開文件的 `FujitsuDA4Client`，產碼器的 `amplify-da4` 走的就是它；
+  沒有 token 無法真的執行，所以 `verify:emit` 只對 Amplify 的樁驗證程式本身（見 `docs/PYTHON_EXPORT.md`）。
+  另一個選項 `da` 是本文件的演算法本身的純 Python 版，免安裝，`verify:emit` 會真的執行它。
 - **不實作平行回火版（PTDA）。**論文 §II.D 有描述，但它的回火交換在 CPU 上執行，不是 DA 本體。
 - **不宣稱任何速度。**
