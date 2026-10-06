@@ -1,7 +1,7 @@
 {
   "name": "qubo-core",
   "private": true,
-  "version": "0.9.0",
+  "version": "0.10.0",
   "type": "module",
   "description": "QUBO derivation engine, classical solvers and Python emitters. Turns a constrained 0/1 model into the standard form xᵀQx.",
   "exports": {
@@ -18,14 +18,20 @@
     "./python/emit": "./src/python/emit.ts",
     "./python/module": "./src/python/module.ts",
     "./python/samplers": "./src/python/samplers.ts",
-    "./python/serialize": "./src/python/serialize.ts"
+    "./python/serialize": "./src/python/serialize.ts",
+    "./hardware/pegasus": "./src/hardware/pegasus.ts",
+    "./hardware/problemGraph": "./src/hardware/problemGraph.ts",
+    "./hardware/embed": "./src/hardware/embed.ts",
+    "./hardware/checkEmbedding": "./src/hardware/checkEmbedding.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "verify": "node scripts/verify-cases.mjs",
     "verify:python": "node scripts/verify-python.mjs",
     "verify:emit": "node scripts/verify-emit.mjs",
-    "verify:all": "npm run verify && npm run verify:python && npm run verify:emit"
+    "verify:all": "npm run verify && npm run verify:python && npm run verify:emit && npm run verify:embed",
+    "verify:embed": "node scripts/verify-embed.mjs",
+    "compare:minorminer": "node scripts/compare-minorminer.mjs"
   },
   "devDependencies": {
     "typescript": "^6.0.3",

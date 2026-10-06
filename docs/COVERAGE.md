@@ -97,6 +97,7 @@ Formulating and Using QUBO Models*（4OR 2019；arXiv:1811.11538）為範圍。�
 | p.32 | predictive health analytics（De Oliveira 等；Sahner 等） | **不收錄** | 同上 |
 | p.32 | financial portfolio management（Elsokkary 等；Kalra 等） | 延伸・引用 | `portfolio`（教科書的二元 Markowitz 寫法） |
 | p.32 | IBM 神經型態電腦、Fujitsu Digital Annealer | 不適用 | 硬體平台，不是問題 |
+| p.33 | QUBO 必須嵌入（編譯）到量子硬體上，本身就很難（Date 等，2019） | **工具功能** | 不是問題，所以不是案例；收在 `hardware/`：Pegasus 拓樸與嵌入啟發式，見 [`EMBEDDING.md`](EMBEDDING.md) |
 | p.34 | QAOA 用於 MaxCut、MIS | 已涵蓋 | `max-cut`、`max-independent-set`；QAOA 本身是求解法 |
 | p.34 | 以 set partitioning 做分群 | 已涵蓋 | `set-partitioning` |
 | pp.34–35 | clique partitioning（correlation clustering）、modularity maximization | 已涵蓋 | `clique-partitioning`、`community-detection` |

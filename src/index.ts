@@ -22,3 +22,7 @@ export * from './python/serialize';
 export { FUNCTION_MODULE } from './python/module';
 export * from './cases';
 export * from './cases/mutate';
+export * from './hardware/pegasus';
+export * from './hardware/problemGraph';
+export * from './hardware/embed';
+export * from './hardware/checkEmbedding';
